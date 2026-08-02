@@ -127,6 +127,98 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Queue
+    |--------------------------------------------------------------------------
+    |
+    | Where RunPageSpeedTest jobs are dispatched. Both values are null by
+    | default, meaning the application's default connection and queue.
+    |
+    | A dedicated queue is worth considering on a busy application: a single
+    | PageSpeed run blocks its worker for 20-60 seconds, so a scheduled cycle
+    | over a few dozen URLs will starve anything sharing the queue with it.
+    |
+    */
+    'queue' => [
+        'connection' => env( 'PAGESPEED_QUEUE_CONNECTION' ),
+        'queue'      => env( 'PAGESPEED_QUEUE' ),
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Rate Limiting
+    |--------------------------------------------------------------------------
+    |
+    | The most PageSpeed requests this application will start in one minute,
+    | across every worker. Jobs over the limit are released back onto the
+    | queue rather than dropped, so a large cycle spreads itself out instead
+    | of failing.
+    |
+    | The default of 30 is deliberately conservative. Google does not publish
+    | a PageSpeed Insights rate limit — not in the Get Started guide, not in
+    | the API reference, and not in the FAQ — so the commonly cited figures
+    | are folklore rather than documentation. Check the quota page for your
+    | own project in the Google Cloud Console before raising this.
+    |
+    | Set to 0 to disable throttling entirely.
+    |
+    */
+    'rate_limit' => [
+        'per_minute' => env( 'PAGESPEED_RATE_LIMIT_PER_MINUTE', 30 ),
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Job Behaviour
+    |--------------------------------------------------------------------------
+    |
+    | - "timeout"     seconds one job may run for. Sits above the request
+    |                 timeout above so the HTTP client, which knows which URL
+    |                 it was testing, is the thing that gives up first.
+    | - "tries"       attempts before the run is recorded as failed. Applies
+    |                 to transient failures only; a missing API key is never
+    |                 retried, because no amount of waiting produces one.
+    | - "backoff"     seconds to wait before each retry.
+    | - "quota_delay" seconds to wait after a genuine quota rejection. This
+    |                 releases the job rather than consuming a retry, so an
+    |                 exhausted quota postpones a run instead of failing it.
+    |
+    */
+    'job' => [
+        'timeout'     => env( 'PAGESPEED_JOB_TIMEOUT', 120 ),
+        'tries'       => env( 'PAGESPEED_JOB_TRIES', 3 ),
+        'backoff'     => [ 60, 300 ],
+        'quota_delay' => env( 'PAGESPEED_QUOTA_DELAY', 1800 ),
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Scheduling
+    |--------------------------------------------------------------------------
+    |
+    | - "enabled"           whether the package registers its own hourly
+    |                       `pagespeed:monitor` task. Turn this off to call
+    |                       the command from your own schedule instead.
+    | - "persist_hook_urls" whether URLs contributed through the
+    |                       `ap.pageSpeed.registerUrls` filter are saved
+    |                       before a cycle. They have to be: an unsaved URL
+    |                       has nowhere to record `last_tested_at`, so it
+    |                       would come due on every single cycle regardless
+    |                       of its cadence, and its results would have no row
+    |                       to hang history from.
+    |
+    | The task runs hourly rather than on the test frequency because "hourly"
+    | is itself a supported cadence, and because a URL only comes due once its
+    | own interval has elapsed — an hourly tick is how often the package
+    | *looks*, not how often it tests.
+    |
+    */
+    'scheduling' => [
+        'enabled'           => env( 'PAGESPEED_SCHEDULING_ENABLED', true ),
+        'persist_hook_urls' => true,
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
     | Sitemap Discovery
     |--------------------------------------------------------------------------
     |

@@ -26,10 +26,15 @@ use ArtisanPackUI\PageSpeedInsights\Configuration\CmsSettingsDriver;
 use ArtisanPackUI\PageSpeedInsights\Configuration\ConfigDriver;
 use ArtisanPackUI\PageSpeedInsights\Configuration\DatabaseDriver;
 use ArtisanPackUI\PageSpeedInsights\Console\Commands\DiscoverSitemapCommand;
+use ArtisanPackUI\PageSpeedInsights\Console\Commands\MonitorCommand;
 use ArtisanPackUI\PageSpeedInsights\Contracts\ApiKeyRepository;
+use ArtisanPackUI\PageSpeedInsights\Jobs\Middleware\RateLimitPageSpeedRequests;
+use ArtisanPackUI\PageSpeedInsights\Scheduling\TestScheduler;
 use ArtisanPackUI\PageSpeedInsights\Support\GoogleConnectionResolver;
 use ArtisanPackUI\PageSpeedInsights\Urls\SitemapDiscoverer;
 use ArtisanPackUI\PageSpeedInsights\Urls\UrlRegistry;
+use Illuminate\Cache\RateLimiter;
+use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Contracts\Foundation\Application;
 use Illuminate\Http\Client\Factory as HttpFactory;
 use Illuminate\Support\ServiceProvider;
@@ -59,6 +64,7 @@ class PageSpeedInsightsServiceProvider extends ServiceProvider
         $this->registerApiKeyDrivers();
         $this->registerApiClient();
         $this->registerUrlServices();
+        $this->registerScheduling();
 
         $this->app->singleton( 'pagespeed-insights', function (): PageSpeedInsights {
             return new PageSpeedInsights();
@@ -89,11 +95,69 @@ class PageSpeedInsightsServiceProvider extends ServiceProvider
         if ( $this->app->runningInConsole() ) {
             $this->commands( [
                 DiscoverSitemapCommand::class,
+                MonitorCommand::class,
             ] );
+
+            $this->scheduleMonitoring();
         }
 
         // Routes, views, Livewire components, and the CMS-framework
         // AdminWidget bridge are registered here as each is built.
+    }
+
+    /**
+     * Bind the queue and scheduling services.
+     *
+     * @since 1.0.0
+     *
+     * @return void
+     */
+    protected function registerScheduling(): void
+    {
+        $this->app->bind( RateLimitPageSpeedRequests::class, fn ( Application $app ): RateLimitPageSpeedRequests => new RateLimitPageSpeedRequests(
+            $app->make( RateLimiter::class ),
+        ) );
+
+        $this->app->bind( TestScheduler::class, fn ( Application $app ): TestScheduler => new TestScheduler(
+            $app->make( UrlRegistry::class ),
+            $app->make( ApiKeyRepository::class ),
+            $app[ 'config' ],
+            $app[ 'log' ],
+        ) );
+    }
+
+    /**
+     * Register the package's own hourly monitoring task.
+     *
+     * Hourly rather than on the configured test frequency because a URL only
+     * comes due once its own interval has elapsed: the tick is how often the
+     * package *looks*, not how often it tests. Anything less frequent would
+     * make `hourly` — a supported per-URL cadence — unreachable.
+     *
+     * Registered through `callAfterResolving` so that an application which
+     * never resolves the scheduler does not pay for one, and turned off in
+     * one config flag for applications that would rather call
+     * `pagespeed:monitor` from their own schedule. The flag is read when the
+     * scheduler is resolved rather than when this provider boots, so setting
+     * it after the fact still takes effect.
+     *
+     * @since 1.0.0
+     *
+     * @return void
+     */
+    protected function scheduleMonitoring(): void
+    {
+        $this->callAfterResolving( Schedule::class, function ( Schedule $schedule ): void {
+            if ( false === $this->app[ 'config' ]->get( 'pagespeed-insights.scheduling.enabled', true ) ) {
+                return;
+            }
+
+            // Overlapping cycles would double-queue every URL that is due,
+            // and each duplicate costs quota to learn nothing.
+            $schedule->command( MonitorCommand::class )
+                ->hourly()
+                ->withoutOverlapping();
+        } );
     }
 
     /**

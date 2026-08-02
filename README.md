@@ -213,6 +213,77 @@ use ArtisanPackUI\PageSpeedInsights\Urls\SitemapDiscoverer;
 $found = app( SitemapDiscoverer::class )->discover( 'https://example.com/sitemap.xml', 100 );
 ```
 
+## Scheduled testing
+
+Monitored URLs are tested by a queued job, dispatched by a scheduler the package registers for you:
+
+```bash
+php artisan pagespeed:monitor                                   # queue everything that is due
+php artisan pagespeed:monitor --url=https://example.com/about   # queue one URL now, due or not
+```
+
+Make sure a queue worker is running, and that Laravel's own scheduler is wired up (`php artisan schedule:work`, or the usual cron entry). The package registers `pagespeed:monitor` **hourly** — that is how often it *looks*, not how often it tests. A URL only comes due once its own `test_frequency` has elapsed, and `hourly` is itself a supported cadence, so anything less frequent would make it unreachable.
+
+The hourly task is guarded with `withoutOverlapping()`, so two cycles never run at once. It does not, however, know what is already sitting in the queue: a URL stays due until a run actually completes, so if your worker is far enough behind that a cycle's jobs have not drained within the hour, the next cycle will queue that URL again. At the default budget of 30 requests a minute this needs a very large monitored set to reach — but if you are near it, give PageSpeed its own queue and worker.
+
+You can queue a run yourself, for a URL that is not monitored at all if you like:
+
+```php
+use ArtisanPackUI\PageSpeedInsights\Jobs\RunPageSpeedTest;
+
+RunPageSpeedTest::dispatch( 'https://example.com/about', 'mobile' );
+```
+
+### What the job does with a failure
+
+| Cause | Behaviour |
+|---|---|
+| No API key | **Never retried.** One `failed` result row, written immediately with the fix in `error_message`, logged at error level. |
+| Quota exhausted on a configured key | **Released** with a long delay rather than consuming a retry. No result row; the URL stays owed a run. |
+| 5xx, transport failure, Lighthouse runtime error | **Retried** with backoff, then recorded as a `failed` row once the attempts are exhausted. |
+
+The first row of that table is the one that matters most. Keyless PageSpeed answers HTTP 429 — the same status as genuine quota exhaustion — because Google's shared anonymous project has a daily quota of zero. If the job treated the two alike, an application that simply never set `PAGESPEED_API_KEY` would release and retry forever, silently, and present as a broken queue rather than as a one-line configuration fix. For the same reason `TestScheduler` and `pagespeed:monitor` refuse a whole cycle when no key is configured, with one loud error, instead of queueing N URLs × 2 form factors of jobs that each fail identically.
+
+A run that exhausts its retries always writes its `failed` row. Without that, a monitored URL would quietly stop producing history, and anything comparing runs over time would have nothing to compare and report nothing wrong.
+
+Only a run that produced a measurement updates `last_tested_at`. A failed run does not, because that column drives due-ness and letting a failure satisfy the cadence would make a URL that has stopped being testable read as freshly tested. The trade-off is deliberate: a permanently broken URL is re-queued on every cycle, writing a failed row each time, until you fix it or pause it.
+
+### Rate limiting
+
+Every job passes through a middleware that holds the whole application to `pagespeed-insights.rate_limit.per_minute` requests, counted across all URLs and all workers — Google attributes quota to the API key, not to the page being tested. A job over the budget is released back onto the queue, so a large cycle spreads itself out instead of failing.
+
+The default of 30 is conservative on purpose. Google does not publish a PageSpeed Insights rate limit anywhere in its documentation, so the commonly cited figures are folklore rather than fact. Check the quota page for your own project in the Google Cloud Console before raising it. Set it to `0` to turn throttling off.
+
+### Configuration
+
+| Key | Env | Default | Meaning |
+|---|---|---|---|
+| `queue.connection` | `PAGESPEED_QUEUE_CONNECTION` | null | Connection to dispatch on. Null means the application default. |
+| `queue.queue` | `PAGESPEED_QUEUE` | null | Queue name. A dedicated queue is worth considering — one run blocks a worker for 20–60 seconds. |
+| `rate_limit.per_minute` | `PAGESPEED_RATE_LIMIT_PER_MINUTE` | 30 | Requests started per minute, application-wide. 0 disables. |
+| `job.timeout` | `PAGESPEED_JOB_TIMEOUT` | 120 | Seconds one attempt may run for. |
+| `job.tries` | `PAGESPEED_JOB_TRIES` | 3 | Attempts before a transient failure is recorded. |
+| `job.backoff` | — | `[60, 300]` | Seconds to wait before each retry. |
+| `job.quota_delay` | `PAGESPEED_QUOTA_DELAY` | 1800 | Seconds to postpone a quota-rejected run. |
+| `scheduling.enabled` | `PAGESPEED_SCHEDULING_ENABLED` | true | Whether the package registers its own hourly task. |
+| `scheduling.persist_hook_urls` | — | true | Whether hook-contributed URLs are saved before a cycle. |
+
+That last one is not really optional. A URL contributed through `ap.pageSpeed.registerUrls` comes back as an unsaved model, which has nowhere to record `last_tested_at` — so it would read as due on every cycle whatever its cadence says, and its results would have no row to hang history from. The scheduler is the one place in the package that calls `UrlRegistry::persistHookUrls()` for you.
+
+### Hooks
+
+```php
+// Before a run is sent to Google.
+addAction( 'ap.pageSpeed.beforeTest', function ( string $url, string $strategy, ?PageSpeedUrl $monitored ): void {
+    // ...
+} );
+
+// After a result row is written. Fires for failed rows too, with a null TestResult.
+addAction( 'ap.pageSpeed.resultStored', function ( PageSpeedResult $row, ?TestResult $result ): void {
+    // ...
+} );
+```
+
 ## Development
 
 ```bash
