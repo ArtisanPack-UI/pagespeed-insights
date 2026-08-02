@@ -265,7 +265,7 @@ The default of 30 is conservative on purpose. Google does not publish a PageSpee
 | `job.tries` | `PAGESPEED_JOB_TRIES` | 3 | Attempts before a transient failure is recorded. |
 | `job.backoff` | — | `[60, 300]` | Seconds to wait before each retry. |
 | `job.quota_delay` | `PAGESPEED_QUOTA_DELAY` | 1800 | Seconds to postpone a quota-rejected run. |
-| `scheduling.enabled` | `PAGESPEED_SCHEDULING_ENABLED` | true | Whether the package registers its own hourly task. |
+| `scheduling.enabled` | `PAGESPEED_SCHEDULING_ENABLED` | true | Whether the package registers its own scheduled tasks. |
 | `scheduling.persist_hook_urls` | — | true | Whether hook-contributed URLs are saved before a cycle. |
 
 That last one is not really optional. A URL contributed through `ap.pageSpeed.registerUrls` comes back as an unsaved model, which has nowhere to record `last_tested_at` — so it would read as due on every cycle whatever its cadence says, and its results would have no row to hang history from. The scheduler is the one place in the package that calls `UrlRegistry::persistHookUrls()` for you.
@@ -283,6 +283,32 @@ addAction( 'ap.pageSpeed.resultStored', function ( PageSpeedResult $row, ?TestRe
     // ...
 } );
 ```
+
+## Retention
+
+Score history is the point of this package, and it is also the thing that grows without limit if nothing stops it: an hourly cadence on 200 URLs across both form factors writes about 3.5 million rows a year. So the package prunes itself.
+
+```bash
+php artisan pagespeed:prune             # apply both windows
+php artisan pagespeed:prune --dry-run   # report what would go, touch nothing
+```
+
+Two windows, not one, because the two things a result row holds cost wildly different amounts to keep:
+
+| Key | Env | Default | Meaning |
+|---|---|---|---|
+| `retention.days` | `PAGESPEED_RETENTION_DAYS` | 365 | Delete results older than this. |
+| `retention.keep_raw_days` | `PAGESPEED_RETENTION_KEEP_RAW_DAYS` | 30 | Null `raw_response` on results older than this, leaving the scores in place. |
+
+A score row is a few dozen bytes and is the entire reason history exists — a year keeps a full seasonal cycle, so this year's Black Friday has last year's to be compared against. A retained `raw_response` is hundreds of kilobytes of data the package has already parsed into its own columns, kept only so a parsing problem can be diagnosed against a real payload; a month-old payload has either answered that question or never will. So the payload expires first and the row outlives it.
+
+Both windows measure from `created_at` rather than `fetched_at`, because `fetched_at` is Google's own analysis timestamp and is null on a failed run — and retention has to be able to expire a failed row too.
+
+Either window can be set to `0` to turn that half off. `0` for `retention.days` means history is never deleted, which is a reasonable choice on a small monitored set, but it is a choice rather than the default. Anything that is not a positive whole number of days no larger than a century — a blank env var, a typo, a value so large that subtracting it from today overflows — is also read as off, because the alternative reading is a cutoff in the future, and a cutoff in the future matches the whole table.
+
+`pagespeed:prune` is registered **daily** under the same `scheduling.enabled` flag as the monitoring task. A day's worth of results is a rounding error against a year-long window, so there is nothing to gain from sweeping more often.
+
+`PageSpeedResult` is also `Prunable`, so `php artisan model:prune --model="ArtisanPackUI\PageSpeedInsights\Models\PageSpeedResult"` sweeps it alongside your own models if that is how you already run retention. It deletes on `retention.days` only — `Prunable` has no notion of expiring one column — and it hydrates a model per row, so `pagespeed:prune` is the better path for a table whose first prune may cover a million rows.
 
 ## Development
 

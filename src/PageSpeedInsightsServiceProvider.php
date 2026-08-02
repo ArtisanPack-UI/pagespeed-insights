@@ -27,10 +27,12 @@ use ArtisanPackUI\PageSpeedInsights\Configuration\ConfigDriver;
 use ArtisanPackUI\PageSpeedInsights\Configuration\DatabaseDriver;
 use ArtisanPackUI\PageSpeedInsights\Console\Commands\DiscoverSitemapCommand;
 use ArtisanPackUI\PageSpeedInsights\Console\Commands\MonitorCommand;
+use ArtisanPackUI\PageSpeedInsights\Console\Commands\PruneCommand;
 use ArtisanPackUI\PageSpeedInsights\Contracts\ApiKeyRepository;
 use ArtisanPackUI\PageSpeedInsights\Jobs\Middleware\RateLimitPageSpeedRequests;
 use ArtisanPackUI\PageSpeedInsights\Scheduling\TestScheduler;
 use ArtisanPackUI\PageSpeedInsights\Support\GoogleConnectionResolver;
+use ArtisanPackUI\PageSpeedInsights\Support\RetentionPolicy;
 use ArtisanPackUI\PageSpeedInsights\Urls\SitemapDiscoverer;
 use ArtisanPackUI\PageSpeedInsights\Urls\UrlRegistry;
 use Illuminate\Cache\RateLimiter;
@@ -96,9 +98,10 @@ class PageSpeedInsightsServiceProvider extends ServiceProvider
             $this->commands( [
                 DiscoverSitemapCommand::class,
                 MonitorCommand::class,
+                PruneCommand::class,
             ] );
 
-            $this->scheduleMonitoring();
+            $this->scheduleTasks();
         }
 
         // Routes, views, Livewire components, and the CMS-framework
@@ -124,28 +127,40 @@ class PageSpeedInsightsServiceProvider extends ServiceProvider
             $app[ 'config' ],
             $app[ 'log' ],
         ) );
+
+        $this->app->bind(
+            RetentionPolicy::class,
+            fn ( Application $app ): RetentionPolicy => new RetentionPolicy( $app[ 'config' ] ),
+        );
     }
 
     /**
-     * Register the package's own hourly monitoring task.
+     * Register the package's own scheduled tasks.
      *
-     * Hourly rather than on the configured test frequency because a URL only
-     * comes due once its own interval has elapsed: the tick is how often the
-     * package *looks*, not how often it tests. Anything less frequent would
-     * make `hourly` — a supported per-URL cadence — unreachable.
+     * Monitoring runs **hourly** rather than on the configured test
+     * frequency, because a URL only comes due once its own interval has
+     * elapsed: the tick is how often the package *looks*, not how often it
+     * tests. Anything less frequent would make `hourly` — a supported
+     * per-URL cadence — unreachable.
+     *
+     * Pruning runs **daily**, and is registered here rather than left to the
+     * application because retention that has to be wired up by hand is
+     * retention most installs never get. A day's worth of results is a
+     * rounding error against a year-long window, so there is nothing to gain
+     * from sweeping more often.
      *
      * Registered through `callAfterResolving` so that an application which
      * never resolves the scheduler does not pay for one, and turned off in
-     * one config flag for applications that would rather call
-     * `pagespeed:monitor` from their own schedule. The flag is read when the
-     * scheduler is resolved rather than when this provider boots, so setting
-     * it after the fact still takes effect.
+     * one config flag for applications that would rather call these commands
+     * from their own schedule. The flag is read when the scheduler is
+     * resolved rather than when this provider boots, so setting it after the
+     * fact still takes effect.
      *
      * @since 1.0.0
      *
      * @return void
      */
-    protected function scheduleMonitoring(): void
+    protected function scheduleTasks(): void
     {
         $this->callAfterResolving( Schedule::class, function ( Schedule $schedule ): void {
             if ( false === $this->app[ 'config' ]->get( 'pagespeed-insights.scheduling.enabled', true ) ) {
@@ -156,6 +171,12 @@ class PageSpeedInsightsServiceProvider extends ServiceProvider
             // and each duplicate costs quota to learn nothing.
             $schedule->command( MonitorCommand::class )
                 ->hourly()
+                ->withoutOverlapping();
+
+            // The first prune of a table that has been growing for a year is
+            // long enough that the next day's could start on top of it.
+            $schedule->command( PruneCommand::class )
+                ->daily()
                 ->withoutOverlapping();
         } );
     }

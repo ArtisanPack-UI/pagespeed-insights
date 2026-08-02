@@ -219,6 +219,37 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Retention
+    |--------------------------------------------------------------------------
+    |
+    | How long `pagespeed:prune` keeps history for. Two windows rather than
+    | one, because the two things a result row holds cost wildly different
+    | amounts to keep: the scores are a few dozen bytes and are the entire
+    | point of recording history, while a retained raw payload is hundreds of
+    | kilobytes of data the package has already parsed into its own columns.
+    |
+    | - "days"          delete results older than this. A year keeps a
+    |                   full seasonal cycle, so this year's Black Friday can
+    |                   be compared with last year's.
+    | - "keep_raw_days" null `raw_response` on results older than this,
+    |                   leaving the scores in place. Raw payloads are kept to
+    |                   diagnose a parsing problem against a real response,
+    |                   and a month-old payload has already answered that
+    |                   question or never will.
+    |
+    | Either window can be set to 0 (or null) to turn that half off. Setting
+    | `days` to 0 means history is never deleted, which is a real choice on a
+    | small monitored set — but it is a choice, not the default, because an
+    | hourly cadence on 200 URLs writes 3.5 million rows a year.
+    |
+    */
+    'retention' => [
+        'days'          => env( 'PAGESPEED_RETENTION_DAYS', 365 ),
+        'keep_raw_days' => env( 'PAGESPEED_RETENTION_KEEP_RAW_DAYS', 30 ),
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
     | Sitemap Discovery
     |--------------------------------------------------------------------------
     |

@@ -22,10 +22,12 @@ use ArtisanPackUI\PageSpeedInsights\Data\ScoreSet;
 use ArtisanPackUI\PageSpeedInsights\Data\TestResult;
 use ArtisanPackUI\PageSpeedInsights\Database\Factories\PageSpeedResultFactory;
 use ArtisanPackUI\PageSpeedInsights\Support\CategoryTranslator;
+use ArtisanPackUI\PageSpeedInsights\Support\RetentionPolicy;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Prunable;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Support\Facades\Log;
 
@@ -68,6 +70,7 @@ use Illuminate\Support\Facades\Log;
 class PageSpeedResult extends Model
 {
     use HasFactory;
+    use Prunable;
 
     /**
      * The run finished and produced scores, however thin.
@@ -259,6 +262,27 @@ class PageSpeedResult extends Model
         $model->fetched_at       = CarbonImmutable::now();
 
         return $model;
+    }
+
+    /**
+     * The results Laravel's own `model:prune` may delete.
+     *
+     * Present so an application that already runs `model:prune` over its
+     * models gets this table swept along with the rest. It is not the path
+     * the package schedules for itself: `Prunable` hydrates and deletes one
+     * model at a time, which is the right shape for a model with files or
+     * relations to clean up and the wrong one for a history table whose first
+     * prune may cover a million rows. `pagespeed:prune` does the same work in
+     * chunked statements, and is also the only one of the two that expires
+     * raw payloads on rows it is keeping.
+     *
+     * @since 1.0.0
+     *
+     * @return Builder<PageSpeedResult> The expired results.
+     */
+    public function prunable(): Builder
+    {
+        return app( RetentionPolicy::class )->expiredResults();
     }
 
     /**
