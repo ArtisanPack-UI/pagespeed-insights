@@ -2,6 +2,7 @@
 
 declare( strict_types=1 );
 
+use ArtisanPackUI\PageSpeedInsights\Alerts\RegressionDetector;
 use ArtisanPackUI\PageSpeedInsights\Api\PageSpeedClient;
 use ArtisanPackUI\PageSpeedInsights\Api\PageSpeedRequest;
 use ArtisanPackUI\PageSpeedInsights\Data\TestResult;
@@ -9,8 +10,10 @@ use ArtisanPackUI\PageSpeedInsights\Exceptions\PageSpeedApiException;
 use ArtisanPackUI\PageSpeedInsights\Jobs\RunPageSpeedTest;
 use ArtisanPackUI\PageSpeedInsights\Models\PageSpeedResult;
 use ArtisanPackUI\PageSpeedInsights\Models\PageSpeedUrl;
+use ArtisanPackUI\PageSpeedInsights\Notifications\ScoreRegressionNotification;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Notification;
 use Tests\Support\RecordingQueueJob;
 
 uses( RefreshDatabase::class );
@@ -298,5 +301,69 @@ describe( 'queue configuration', function (): void {
             ->and( $job->tries )->toBe( RunPageSpeedTest::DEFAULT_TRIES )
             ->and( $job->backoff() )->toBe( RunPageSpeedTest::DEFAULT_BACKOFF )
             ->and( $job->queue )->toBeNull();
+    } );
+} );
+
+describe( 'regression detection', function (): void {
+    it( 'alerts when the run it just stored is worse than the one before it', function (): void {
+        Notification::fake();
+
+        config( [
+            'pagespeed-insights.alerts.enabled'        => true,
+            'pagespeed-insights.alerts.drop_points'    => 10,
+            'pagespeed-insights.alerts.digest.enabled' => false,
+            'pagespeed-insights.alerts.mail_to'        => [ 'ops@example.com' ],
+        ] );
+
+        PageSpeedResult::factory()->create( [
+            'url'               => 'https://example.com/about',
+            'strategy'          => PageSpeedRequest::STRATEGY_MOBILE,
+            'performance_score' => 100,
+        ] );
+
+        Http::fake( [ '*' => Http::response( psiFixture( 'poor' ) ) ] );
+
+        psiRunJob( new RunPageSpeedTest( 'https://example.com/about', PageSpeedRequest::STRATEGY_MOBILE ) );
+
+        Notification::assertSentOnDemandTimes( ScoreRegressionNotification::class, 1 );
+    } );
+
+    it( 'stores the result anyway when alerting blows up', function (): void {
+        Notification::fake();
+
+        config( [ 'pagespeed-insights.alerts.enabled' => true ] );
+
+        app()->bind( RegressionDetector::class, function (): RegressionDetector {
+            throw new RuntimeException( 'The alerting side is broken.' );
+        } );
+
+        Http::fake( [ '*' => Http::response( psiFixture( 'healthy' ) ) ] );
+
+        psiRunJob( new RunPageSpeedTest( 'https://example.com/about', PageSpeedRequest::STRATEGY_MOBILE ) );
+
+        expect( PageSpeedResult::query()->sole()->status )->toBe( PageSpeedResult::STATUS_COMPLETED );
+
+        Notification::assertNothingSent();
+    } );
+
+    it( 'says nothing when the master switch is off', function (): void {
+        Notification::fake();
+
+        config( [
+            'pagespeed-insights.alerts.enabled' => false,
+            'pagespeed-insights.alerts.mail_to' => [ 'ops@example.com' ],
+        ] );
+
+        PageSpeedResult::factory()->create( [
+            'url'               => 'https://example.com/about',
+            'strategy'          => PageSpeedRequest::STRATEGY_MOBILE,
+            'performance_score' => 100,
+        ] );
+
+        Http::fake( [ '*' => Http::response( psiFixture( 'poor' ) ) ] );
+
+        psiRunJob( new RunPageSpeedTest( 'https://example.com/about', PageSpeedRequest::STRATEGY_MOBILE ) );
+
+        Notification::assertNothingSent();
     } );
 } );

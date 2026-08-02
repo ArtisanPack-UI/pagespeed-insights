@@ -282,7 +282,49 @@ addAction( 'ap.pageSpeed.beforeTest', function ( string $url, string $strategy, 
 addAction( 'ap.pageSpeed.resultStored', function ( PageSpeedResult $row, ?TestResult $result ): void {
     // ...
 } );
+
+// After a stored run is found to have regressed. $regressions is a list of arrays.
+addAction( 'ap.pageSpeed.scoreRegressed', function ( PageSpeedResult $row, array $regressions ): void {
+    // ...
+} );
 ```
+
+## Alerts
+
+A trend chart nobody opens is a trend chart nobody reads. After each completed run the package compares it with the previous completed run for the same URL and form factor, and turns what got worse into a notification.
+
+Three things count as a regression:
+
+- **A drop.** The score fell by at least `alerts.drop_points` (10) against the previous run.
+- **A floor breach.** The score is below `alerts.thresholds.<category>`, whatever the previous run said. Floors are absolute rather than comparative, so they apply to a URL's first run too — a page that has been bad since the day it was added is not less bad for having no history.
+- **A score that stopped existing.** The category was scored last run and is null now. This one is worded apart from a drop on purpose: nothing got slower, the page simply stopped being measured for it, and the naive implementation — "no number to subtract, so nothing to say" — is exactly the silence this feature exists to break.
+
+Failed runs are never used as a baseline, because they carry no scores and comparing against one would read every recovery as a hundred-point gain. Runs that completed while losing data are skipped as a baseline too, up to ten runs back, so a clean run following a thin one is not reported as a recovery it never made — set `alerts.skip_degraded` to `false` if you would rather compare against them. A regression detected *on* a degraded run is still reported; the notification says the run was degraded rather than staying quiet about it.
+
+When there is nothing to compare against, that fact is logged at debug level rather than passed over silently, so "why did I not get an alert" is a question the log can answer.
+
+### Digest
+
+One monitoring cycle produces one result per URL per form factor, each inspected in its own queued job. Alerting on each one directly turns a single bad deploy into thirty near-identical emails, which is how an alert becomes something people filter into a folder — so regressions are buffered for `alerts.digest.wait` seconds and sent as one notification. Exactly one flush job is queued per window.
+
+Note that the digest is a *delayed* job, and the `sync` queue driver ignores delays. On a sync queue every regression sends immediately; set `alerts.digest.enabled` to `false` there and mean it, or run a real queue.
+
+### Configuration
+
+| Key | Env | Default | Meaning |
+|---|---|---|---|
+| `alerts.enabled` | `PAGESPEED_ALERTS_ENABLED` | true | The master switch. Off means nothing is compared, no hook fires, nothing is sent. |
+| `alerts.drop_points` | `PAGESPEED_ALERT_DROP_POINTS` | 10 | Points a category may lose before it counts. 0 turns drop detection off, leaving the floors. |
+| `alerts.thresholds.*` | `PAGESPEED_ALERT_THRESHOLD_*` | null | An absolute floor per category. Null means no floor. |
+| `alerts.skip_degraded` | — | true | Whether a run that lost data is passed over when looking for a baseline. |
+| `alerts.channels` | — | `['mail']` | Notification channels. |
+| `alerts.mail_to` | `PAGESPEED_ALERT_MAIL_TO` | null | Who to email. An array, or a comma-separated string. |
+| `alerts.notifiable` | — | null | A class the container can resolve to something notifiable, notified alongside `mail_to`. |
+| `alerts.digest.enabled` | — | true | Whether regressions are batched. |
+| `alerts.digest.wait` | `PAGESPEED_ALERT_DIGEST_WAIT` | 300 | Seconds to gather regressions for. |
+| `alerts.digest.store` | `PAGESPEED_ALERT_DIGEST_STORE` | null | Cache store holding the buffer. Null means the default. |
+
+Thresholds ship unset because a floor is a per-site judgement: guessed too high it alerts on everything, too low on nothing. With nobody in `alerts.mail_to` and no `alerts.notifiable`, detection still runs, still fires `ap.pageSpeed.scoreRegressed`, and still logs — it just has nowhere to send an email, which it says at debug level rather than silently.
 
 ## Retention
 

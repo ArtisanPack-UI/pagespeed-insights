@@ -273,6 +273,73 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Alerts
+    |--------------------------------------------------------------------------
+    |
+    | Turning a silent score regression into a notification. Detection runs
+    | after each completed run, comparing it with the previous completed run
+    | for the same URL and form factor.
+    |
+    | - "enabled"        the master switch. Off means nothing is compared, no
+    |                    hook fires, and nothing is sent.
+    | - "drop_points"    how many points a category may lose against the
+    |                    previous run before it counts as a regression. Set to
+    |                    0 (or null) to turn drop detection off and alert on
+    |                    the floors alone.
+    | - "thresholds"     an absolute floor per category. A score below its
+    |                    floor alerts whatever the previous run said —
+    |                    including on a URL's very first run, which has
+    |                    nothing to be compared with. Null means no floor.
+    | - "skip_degraded"  whether a run that completed while losing a category
+    |                    or a lab metric is passed over when looking for
+    |                    something to compare against. It should be: a thin
+    |                    run is a weak baseline, and comparing against one
+    |                    manufactures a "recovery" on the next clean run. The
+    |                    current run is never skipped — a category that was
+    |                    scored last time and is null now is exactly the
+    |                    signal this feature exists for — but the notification
+    |                    says the run was degraded.
+    | - "channels"       the notification channels to deliver on.
+    | - "mail_to"        who to email. An array, or a comma-separated string
+    |                    for the env var. Empty means nobody, in which case
+    |                    detection still fires the hook and logs.
+    | - "notifiable"     an optional class the container can resolve to
+    |                    something notifiable — a team model, a Slack routing
+    |                    object — notified alongside `mail_to`.
+    | - "digest"         one monitoring cycle produces N URLs x 2 form factors
+    |                    of results, and alerting on each one separately is
+    |                    how an alert becomes something people filter into a
+    |                    folder. Regressions are buffered for `wait` seconds
+    |                    and sent as a single notification. `store` names a
+    |                    cache store; null uses the default one.
+    |
+    */
+    'alerts' => [
+        'enabled'     => env( 'PAGESPEED_ALERTS_ENABLED', true ),
+        'drop_points' => env( 'PAGESPEED_ALERT_DROP_POINTS', 10 ),
+
+        'thresholds' => [
+            'performance'    => env( 'PAGESPEED_ALERT_THRESHOLD_PERFORMANCE' ),
+            'accessibility'  => env( 'PAGESPEED_ALERT_THRESHOLD_ACCESSIBILITY' ),
+            'best-practices' => env( 'PAGESPEED_ALERT_THRESHOLD_BEST_PRACTICES' ),
+            'seo'            => env( 'PAGESPEED_ALERT_THRESHOLD_SEO' ),
+        ],
+
+        'skip_degraded' => true,
+
+        'channels'   => [ 'mail' ],
+        'mail_to'    => env( 'PAGESPEED_ALERT_MAIL_TO' ),
+        'notifiable' => null,
+
+        'digest' => [
+            'enabled' => true,
+            'wait'    => env( 'PAGESPEED_ALERT_DIGEST_WAIT', 300 ),
+            'store'   => env( 'PAGESPEED_ALERT_DIGEST_STORE' ),
+        ],
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
     | Store Raw Responses
     |--------------------------------------------------------------------------
     |
