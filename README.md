@@ -129,6 +129,54 @@ addFilter( 'ap.pageSpeed.opportunities', function ( array $opportunities, PageSp
 } );
 ```
 
+## Testing in CI
+
+`pagespeed:test` runs one test synchronously and exits non-zero when the result misses a budget. It is the one command in the package that waits out a run, because a pipeline has nowhere to put a queued job and nothing to do while it waits.
+
+```bash
+php artisan pagespeed:test https://example.com/
+php artisan pagespeed:test https://example.com/ --strategy=desktop --categories=performance,seo
+php artisan pagespeed:test https://example.com/ --min-performance=90 --max-lcp-ms=2500
+php artisan pagespeed:test https://example.com/ --min-performance=90 --json
+php artisan pagespeed:test https://example.com/ --store
+```
+
+| Flag | Fails when |
+|---|---|
+| `--min-performance=` | The performance score is below it |
+| `--min-accessibility=` | The accessibility score is below it |
+| `--min-best-practices=` | The best practices score is below it |
+| `--min-seo=` | The SEO score is below it |
+| `--max-lcp-ms=` | Largest Contentful Paint is above it |
+| `--max-cls=` | Cumulative Layout Shift is above it |
+| `--max-tbt-ms=` | Total Blocking Time is above it |
+
+`--categories` defaults to `all`, and a budget on a category that was not requested is refused before the request goes out rather than reported as unavailable a minute later — it could never have been checked, so it is a typo rather than a regression. Metric budgets need the `performance` category, since lab metrics only come back with it.
+
+`--store` saves the run into result history. An ad hoc result has a null `pagespeed_url_id` unless the URL is already monitored, in which case it joins that URL's history. Nothing else the scheduled path does happens: no hooks fire and no regression alert is raised, because a CI run's audience is the pipeline that invoked it and a branch build must not page the team.
+
+### Exit codes
+
+| Code | Class | Meaning |
+|---|---|---|
+| `0` | — | Every budget passed |
+| `1` | `budget` | A budget was violated — the signal the command exists for |
+| `2` | `input` | The command was called with unusable arguments |
+| `3` | `configuration` | No API key is configured |
+| `4` | `run` | The run failed, a budgeted measurement was unavailable, or `--store` could not save it |
+
+The API key is checked **before** the request. Without that preflight the CI experience is a 20–60 second wait ending in a raw 429, which in a build log reads as a flaky API rather than as a missing secret.
+
+### A budget never passes on a missing score
+
+A budget checked against a score or metric that is null or absent is reported as **unavailable** and exits `4` — never as a pass, and in different words from a score that fell short, because "accessibility is 40" and "accessibility did not come back" need different fixes. A green pipeline that is green because three categories quietly stopped coming back is worse than having no budgets at all. For the same reason an unavailable measurement outranks a violated budget when both happen: the run itself cannot be trusted, and a developer sent to investigate a regression that may not exist is a developer sent to the wrong place. Both are still listed.
+
+Everything the run tolerated — Lighthouse's own `runWarnings`, absent categories, missing lab metrics, no CrUX data — is printed as warnings and carried in `--json`, so a degraded run and a clean one never look the same on stdout.
+
+### Machine-readable output
+
+`--json` prints one document and nothing else: `status`, `failure_class`, `exit_code`, `scores`, `metrics`, `warnings`, `stored_result_id`, and a `budgets` array carrying each budget's flag, target, actual value, and `pass` / `fail` / `unavailable` verdict. A CI annotation is only as good as what is in the payload, so the failure paths emit the same envelope with an `error` message rather than falling back to plain text.
+
 ## Monitored URLs
 
 `UrlRegistry` is the single answer to which URLs this installation monitors. It merges the rows in `pagespeed_urls` with whatever other packages contribute through a hook, and deduplicates the two by canonical URL.
