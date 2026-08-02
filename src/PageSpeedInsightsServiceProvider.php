@@ -21,6 +21,8 @@ declare( strict_types=1 );
 namespace ArtisanPackUI\PageSpeedInsights;
 
 use ArtisanPackUI\Google\Tokens\TokenManager;
+use ArtisanPackUI\PageSpeedInsights\Alerts\AlertDispatcher;
+use ArtisanPackUI\PageSpeedInsights\Alerts\RegressionDetector;
 use ArtisanPackUI\PageSpeedInsights\Api\PageSpeedClient;
 use ArtisanPackUI\PageSpeedInsights\Configuration\CmsSettingsDriver;
 use ArtisanPackUI\PageSpeedInsights\Configuration\ConfigDriver;
@@ -37,7 +39,9 @@ use ArtisanPackUI\PageSpeedInsights\Urls\SitemapDiscoverer;
 use ArtisanPackUI\PageSpeedInsights\Urls\UrlRegistry;
 use Illuminate\Cache\RateLimiter;
 use Illuminate\Console\Scheduling\Schedule;
+use Illuminate\Contracts\Cache\Factory as CacheFactory;
 use Illuminate\Contracts\Foundation\Application;
+use Illuminate\Contracts\Notifications\Dispatcher as NotificationDispatcher;
 use Illuminate\Http\Client\Factory as HttpFactory;
 use Illuminate\Support\ServiceProvider;
 use Throwable;
@@ -67,6 +71,7 @@ class PageSpeedInsightsServiceProvider extends ServiceProvider
         $this->registerApiClient();
         $this->registerUrlServices();
         $this->registerScheduling();
+        $this->registerAlerts();
 
         $this->app->singleton( 'pagespeed-insights', function (): PageSpeedInsights {
             return new PageSpeedInsights();
@@ -132,6 +137,35 @@ class PageSpeedInsightsServiceProvider extends ServiceProvider
             RetentionPolicy::class,
             fn ( Application $app ): RetentionPolicy => new RetentionPolicy( $app[ 'config' ] ),
         );
+    }
+
+    /**
+     * Bind the alerting services.
+     *
+     * Plain binds rather than singletons, for the same reason everything else
+     * in this package is: the alerts block is read on each resolve, so an
+     * application that changes a threshold at runtime — or a test that does —
+     * gets the new value rather than the one that was live when the container
+     * first built the detector.
+     *
+     * @since 1.0.0
+     *
+     * @return void
+     */
+    protected function registerAlerts(): void
+    {
+        $this->app->bind( AlertDispatcher::class, fn ( Application $app ): AlertDispatcher => new AlertDispatcher(
+            $app->make( NotificationDispatcher::class ),
+            $app->make( CacheFactory::class ),
+            $app[ 'config' ],
+            $app[ 'log' ],
+        ) );
+
+        $this->app->bind( RegressionDetector::class, fn ( Application $app ): RegressionDetector => new RegressionDetector(
+            $app->make( AlertDispatcher::class ),
+            $app[ 'config' ],
+            $app[ 'log' ],
+        ) );
     }
 
     /**

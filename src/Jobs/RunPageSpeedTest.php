@@ -15,6 +15,7 @@ declare( strict_types=1 );
 
 namespace ArtisanPackUI\PageSpeedInsights\Jobs;
 
+use ArtisanPackUI\PageSpeedInsights\Alerts\RegressionDetector;
 use ArtisanPackUI\PageSpeedInsights\Api\PageSpeedClient;
 use ArtisanPackUI\PageSpeedInsights\Api\PageSpeedRequest;
 use ArtisanPackUI\PageSpeedInsights\Data\TestResult;
@@ -336,6 +337,38 @@ class RunPageSpeedTest implements ShouldQueue
         }
 
         $this->fireResultStored( $row, $result );
+
+        $this->detectRegressions( $row );
+    }
+
+    /**
+     * Compare the run just stored with the one before it, and alert on what
+     * got worse.
+     *
+     * Wrapped because the alerting half is downstream of the work: a
+     * misconfigured mailer or an unreachable cache must not fail a job that
+     * has already stored a perfectly good result, since the retry would
+     * re-test the URL, spend quota, and arrive back here to alert again.
+     *
+     * @since 1.0.0
+     *
+     * @param  PageSpeedResult  $row  The saved row.
+     *
+     * @return void
+     */
+    protected function detectRegressions( PageSpeedResult $row ): void
+    {
+        try {
+            app( RegressionDetector::class )->handle( $row );
+        } catch ( Throwable $exception ) {
+            Log::error(
+                'A stored PageSpeed result could not be checked for score regressions.',
+                $this->logContext() + [
+                    'exception' => $exception::class,
+                    'error'     => $exception->getMessage(),
+                ],
+            );
+        }
     }
 
     /**
