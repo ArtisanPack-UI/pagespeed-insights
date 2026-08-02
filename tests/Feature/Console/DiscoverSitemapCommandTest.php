@@ -8,27 +8,9 @@ use Illuminate\Support\Facades\Http;
 
 uses( RefreshDatabase::class );
 
-/**
- * Build a `urlset` document from a list of locations.
- *
- * @param  array<int, string>  $urls  The locations to list.
- *
- * @return string The XML.
- */
-function commandUrlset( array $urls ): string
-{
-    $entries = implode( '', array_map(
-        static fn ( string $url ): string => '<url><loc>' . $url . '</loc></url>',
-        $urls,
-    ) );
-
-    return '<?xml version="1.0" encoding="UTF-8"?>'
-        . '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">' . $entries . '</urlset>';
-}
-
 it( 'stores discovered URLs inactive by default', function (): void {
     Http::fake( [
-        'https://example.com/sitemap.xml' => Http::response( commandUrlset( [
+        'https://example.com/sitemap.xml' => Http::response( psiSitemapUrlset( [
             'https://example.com/about',
             'https://example.com/pricing',
         ] ) ),
@@ -46,7 +28,7 @@ it( 'stores discovered URLs inactive by default', function (): void {
 
 it( 'activates discovered URLs when asked to', function (): void {
     Http::fake( [
-        'https://example.com/sitemap.xml' => Http::response( commandUrlset( [ 'https://example.com/about' ] ) ),
+        'https://example.com/sitemap.xml' => Http::response( psiSitemapUrlset( [ 'https://example.com/about' ] ) ),
     ] );
 
     $this->artisan( 'pagespeed:discover-sitemap', [
@@ -61,7 +43,7 @@ it( 'does not duplicate URLs that are already monitored', function (): void {
     PageSpeedUrl::factory()->create( [ 'url' => 'https://example.com/about' ] );
 
     Http::fake( [
-        'https://example.com/sitemap.xml' => Http::response( commandUrlset( [
+        'https://example.com/sitemap.xml' => Http::response( psiSitemapUrlset( [
             'https://example.com/about/',
             'https://example.com/pricing',
         ] ) ),
@@ -76,7 +58,7 @@ it( 'does not duplicate URLs that are already monitored', function (): void {
 
 it( 'honours the limit option', function (): void {
     Http::fake( [
-        'https://example.com/sitemap.xml' => Http::response( commandUrlset( [
+        'https://example.com/sitemap.xml' => Http::response( psiSitemapUrlset( [
             'https://example.com/one',
             'https://example.com/two',
             'https://example.com/three',
@@ -112,7 +94,7 @@ it( 'reports a sitemap it could not read', function (): void {
 
 it( 'reports an empty sitemap without failing', function (): void {
     Http::fake( [
-        'https://example.com/sitemap.xml' => Http::response( commandUrlset( [] ) ),
+        'https://example.com/sitemap.xml' => Http::response( psiSitemapUrlset( [] ) ),
     ] );
 
     $this->artisan( 'pagespeed:discover-sitemap', [ '--sitemap' => 'https://example.com/sitemap.xml' ] )
@@ -124,7 +106,7 @@ it( 'falls back to the configured sitemap when none is named', function (): void
     config()->set( 'pagespeed-insights.sitemap.url', 'https://example.com/sitemap_index.xml' );
 
     Http::fake( [
-        'https://example.com/sitemap_index.xml' => Http::response( commandUrlset( [ 'https://example.com/about' ] ) ),
+        'https://example.com/sitemap_index.xml' => Http::response( psiSitemapUrlset( [ 'https://example.com/about' ] ) ),
     ] );
 
     $this->artisan( 'pagespeed:discover-sitemap' )

@@ -105,6 +105,15 @@ class SitemapDiscoverer
     public const DEFAULT_PATH = '/sitemap.xml';
 
     /**
+     * The root elements a sitemap document is allowed to have.
+     *
+     * @since 1.0.0
+     *
+     * @var array<int, string>
+     */
+    public const ROOT_ELEMENTS = [ 'urlset', 'sitemapindex' ];
+
+    /**
      * libxml's `XML_PARSE_RECOVER` parse option.
      *
      * Written as its value rather than as `LIBXML_RECOVER` because PHP only
@@ -214,7 +223,7 @@ class SitemapDiscoverer
         $this->visited[ $sitemap ] = true;
 
         try {
-            $xml = $this->parse( $sitemap, $this->fetch( $sitemap ) );
+            $xml = $this->parse( $sitemap, $this->fetch( $sitemap, $required ) );
         } catch ( SitemapException $exception ) {
             if ( $required ) {
                 throw $exception;
@@ -353,21 +362,41 @@ class SitemapDiscoverer
     /**
      * Fetch a sitemap document.
      *
+     * Redirects are followed only for the sitemap the caller named, and never
+     * for one a sitemap index pointed at. The same-host rule in
+     * {@see self::walkIndex()} is applied to the address before the request,
+     * so a child that is allowed through and then answers `302
+     * http://169.254.169.254/` would defeat it — the check has to hold for
+     * the address actually fetched, and the cheapest way to guarantee that is
+     * to make the fetched address the only one there is.
+     *
+     * The named sitemap keeps following redirects because that address is
+     * the operator's own choice rather than something a document supplied,
+     * and http-to-https and apex-to-www redirects are ordinary enough that
+     * refusing them would break the common case for no gain: anyone able to
+     * name the sitemap could name the redirect target directly.
+     *
      * @since 1.0.0
      *
      * @param  string  $sitemap  The sitemap URL.
+     * @param  bool  $followRedirects  Whether this address came from the caller rather than from a document.
      *
      * @throws SitemapException When the request fails or the response is not a success.
      *
      * @return string The response body.
      */
-    protected function fetch( string $sitemap ): string
+    protected function fetch( string $sitemap, bool $followRedirects = false ): string
     {
         try {
-            $response = $this->http
+            $request = $this->http
                 ->timeout( $this->resolveTimeout() )
-                ->withHeaders( [ 'Accept' => 'application/xml, text/xml;q=0.9, */*;q=0.8' ] )
-                ->get( $sitemap );
+                ->withHeaders( [ 'Accept' => 'application/xml, text/xml;q=0.9, */*;q=0.8' ] );
+
+            if ( ! $followRedirects ) {
+                $request->withoutRedirecting();
+            }
+
+            $response = $request->get( $sitemap );
         } catch ( Throwable $exception ) {
             throw SitemapException::transportFailure( $sitemap, $exception );
         }
@@ -414,6 +443,25 @@ class SitemapDiscoverer
 
         if ( ! $xml instanceof SimpleXMLElement ) {
             throw SitemapException::unreadable( $sitemap );
+        }
+
+        // Recovering a body that is not XML at all — a bare `Not found`, say
+        // — yields a SimpleXMLElement that wraps no node. It satisfies
+        // instanceof, and then every method on it throws an Error rather
+        // than returning something falsy, so reading the name is the only
+        // way to tell it apart from a real document.
+        try {
+            $root = $xml->getName();
+        } catch ( Throwable ) {
+            throw SitemapException::unreadable( $sitemap );
+        }
+
+        // Recovery mode is why this check is necessary rather than paranoid:
+        // an HTML error page parses cleanly into a document rooted at `html`,
+        // so without it a custom 404 served with a 200 status would report
+        // zero URLs found instead of saying the address is wrong.
+        if ( ! in_array( $root, self::ROOT_ELEMENTS, true ) ) {
+            throw SitemapException::notASitemap( $sitemap, $root );
         }
 
         if ( [] !== $errors ) {

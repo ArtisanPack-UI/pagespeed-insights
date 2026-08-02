@@ -16,6 +16,7 @@ declare( strict_types=1 );
 namespace ArtisanPackUI\PageSpeedInsights\Urls;
 
 use ArtisanPackUI\PageSpeedInsights\Models\PageSpeedUrl;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
 use Psr\Log\LoggerInterface;
 
@@ -121,12 +122,14 @@ class UrlRegistry
      */
     public function stored( bool $activeOnly = false ): Collection
     {
+        /** @var Builder<PageSpeedUrl> $query */
         $query = PageSpeedUrl::query();
 
         if ( $activeOnly ) {
             $query->active();
         }
 
+        /** @var Collection<int, PageSpeedUrl> */
         return $query->orderBy( 'id' )->get();
     }
 
@@ -262,9 +265,17 @@ class UrlRegistry
     /**
      * Change a monitored URL's settings.
      *
-     * The address itself is changed through `url`, which is re-normalized;
-     * an unusable address leaves the row's URL untouched rather than
-     * corrupting it.
+     * The address itself is changed through `url`, which is re-normalized.
+     * An address that cannot be used leaves the row's URL untouched rather
+     * than corrupting it — whether it is unusable because it is not a
+     * testable http(s) URL, or because another row already monitors it and
+     * `pagespeed_urls.url` is unique. The second case would otherwise
+     * surface as a `QueryException` out of `save()`, which is a 500 rather
+     * than an answer.
+     *
+     * Callers that need to tell the operator *why* an address was not
+     * applied should check with {@see self::findStored()} first; this method
+     * never throws, which is what the rest of the class does too.
      *
      * @since 1.0.0
      *
@@ -279,6 +290,15 @@ class UrlRegistry
 
         if ( array_key_exists( 'url', $attributes ) && is_string( $attributes[ 'url' ] ) ) {
             $normalized = UrlNormalizer::normalize( $attributes[ 'url' ] );
+
+            if ( null !== $normalized && $this->isTakenByAnother( $normalized, $url ) ) {
+                $this->logger->warning(
+                    'Refused to change a monitored URL to an address another row already monitors.',
+                    [ 'id' => $url->getKey(), 'from' => $url->url, 'to' => $normalized ],
+                );
+
+                $normalized = null;
+            }
 
             if ( null !== $normalized ) {
                 $writable[ 'url' ] = $normalized;
@@ -426,6 +446,27 @@ class UrlRegistry
         }
 
         return $created;
+    }
+
+    /**
+     * Whether a different row already monitors an address.
+     *
+     * @since 1.0.0
+     *
+     * @param  string  $url  The normalized address.
+     * @param  PageSpeedUrl  $excluding  The row that is allowed to hold it.
+     *
+     * @return bool True when another row already has this URL.
+     */
+    protected function isTakenByAnother( string $url, PageSpeedUrl $excluding ): bool
+    {
+        $query = PageSpeedUrl::query()->forUrl( $url );
+
+        if ( null !== $excluding->getKey() ) {
+            $query->whereKeyNot( $excluding->getKey() );
+        }
+
+        return $query->exists();
     }
 
     /**

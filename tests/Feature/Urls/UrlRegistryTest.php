@@ -216,6 +216,25 @@ it( 'normalizes a URL changed through update', function (): void {
     expect( $url->fresh()->url )->toBe( 'https://example.com/contact' );
 } );
 
+it( 'leaves the address alone when another row already monitors it', function (): void {
+    PageSpeedUrl::factory()->create( [ 'url' => 'https://example.com/taken' ] );
+    $url = PageSpeedUrl::factory()->create( [ 'url' => 'https://example.com/about' ] );
+
+    $this->registry->update( $url, [ 'url' => 'https://example.com/taken/', 'label' => 'Kept' ] );
+
+    expect( $url->fresh()->url )->toBe( 'https://example.com/about' )
+        ->and( $url->fresh()->label )->toBe( 'Kept' )
+        ->and( PageSpeedUrl::query()->count() )->toBe( 2 );
+} );
+
+it( 'allows an update that sets a URL to the value it already has', function (): void {
+    $url = PageSpeedUrl::factory()->create( [ 'url' => 'https://example.com/about' ] );
+
+    $this->registry->update( $url, [ 'url' => 'https://example.com/about/' ] );
+
+    expect( $url->fresh()->url )->toBe( 'https://example.com/about' );
+} );
+
 it( 'leaves the address alone when an update supplies an untestable one', function (): void {
     $url = PageSpeedUrl::factory()->create( [ 'url' => 'https://example.com/about' ] );
 

@@ -201,7 +201,9 @@ Configure the defaults under `pagespeed-insights.sitemap`:
 
 Parsing is tolerant of what real sitemaps look like: a truncated document still yields the entries above the damage, a child sitemap that 404s is skipped rather than aborting its siblings, and namespace prefixes parse the same as the default namespace. The sitemap you actually named is the exception — if that one cannot be fetched or parsed, the command fails with the reason rather than reporting zero URLs found.
 
-A sitemap index may only point at sitemaps on its own host; a child on a different host is skipped and logged. This is what the sitemaps.org protocol requires, and it keeps a sitemap from becoming a list of addresses your application will fetch on the author's behalf — loopback services and cloud metadata endpoints included. Page URLs on other hosts are still discovered, because those are fetched by Google rather than by your server.
+A response that parses but is not rooted at `<urlset>` or `<sitemapindex>` is rejected by name. This matters because recovery-mode parsing happily reads an HTML error page, and a custom 404 served with a 200 status is common — without the check, a wrong address would report "0 URLs found" rather than saying what it actually got.
+
+A sitemap index may only point at sitemaps on its own host; a child on a different host is skipped and logged. Redirects are followed for the sitemap you name — so `example.com/sitemap.xml` redirecting to `www.example.com/sitemap.xml` works — but never for a sitemap that a document pointed at, since the host check runs before the request and a redirect would step around it. This is what the sitemaps.org protocol requires, and it keeps a sitemap from becoming a list of addresses your application will fetch on the author's behalf — loopback services and cloud metadata endpoints included. Page URLs on other hosts are still discovered, because those are fetched by Google rather than by your server.
 
 `SitemapDiscoverer` is available directly when you need the list without storing it:
 

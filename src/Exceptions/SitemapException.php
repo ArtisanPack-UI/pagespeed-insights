@@ -126,6 +126,32 @@ class SitemapException extends RuntimeException
     }
 
     /**
+     * The response parsed as XML but is not a sitemap.
+     *
+     * Worth separating from {@see self::unreadable()} because recovery-mode
+     * parsing succeeds on an HTML error page — it yields a document rooted
+     * at `html` — and a custom 404 page served with HTTP 200 is common
+     * enough that "0 URLs found" would otherwise be the only symptom.
+     *
+     * @since 1.0.0
+     *
+     * @param  string  $sitemap  The sitemap URL.
+     * @param  string  $root  The root element that was found instead.
+     *
+     * @return static The built exception.
+     */
+    public static function notASitemap( string $sitemap, string $root ): static
+    {
+        return static::for(
+            $sitemap,
+            __(
+                'The response from :sitemap is rooted at <:root> rather than <urlset> or <sitemapindex>, so it is not a sitemap. A page served at that address with a 200 status — a custom error page, for instance — looks like this.',
+                [ 'sitemap' => $sitemap, 'root' => $root ],
+            ),
+        );
+    }
+
+    /**
      * Build an exception that remembers which sitemap it is about.
      *
      * @since 1.0.0
