@@ -129,6 +129,90 @@ addFilter( 'ap.pageSpeed.opportunities', function ( array $opportunities, PageSp
 } );
 ```
 
+## Monitored URLs
+
+`UrlRegistry` is the single answer to which URLs this installation monitors. It merges the rows in `pagespeed_urls` with whatever other packages contribute through a hook, and deduplicates the two by canonical URL.
+
+```php
+use ArtisanPackUI\PageSpeedInsights\Urls\UrlRegistry;
+
+$registry = app( UrlRegistry::class );
+
+$registry->all();       // stored rows + hook contributions, deduped
+$registry->active();    // the same, filtered to URLs still being tested
+$registry->stored();    // rows only
+$registry->find( 'https://example.com/about/' );  // matches however it is spelled
+```
+
+### CRUD
+
+```php
+$url = $registry->add( 'https://example.com/pricing', [ 'label' => 'Pricing' ] );
+
+$registry->update( $url, [ 'test_frequency' => 'daily', 'strategies' => [ 'mobile' ] ] );
+$registry->deactivate( $url );   // pause testing, keep the history
+$registry->activate( $url );
+$registry->delete( $url );
+```
+
+`add()` is idempotent — adding a URL that is already stored updates the attributes you passed and leaves the rest, and its score history, alone.
+
+Every URL is stored in a canonical form, so `https://example.com/about`, `https://example.com/about/`, and `HTTPS://Example.com/about#team` are one monitored page rather than three histories of the same page. Scheme and host case, the default port, the fragment, and a trailing slash on a non-root path are erased; query strings and `www.` are not, because either can change which document is served. Anything that is not an http(s) URL, or is longer than the 500-character column, is refused: `add()` returns `null` rather than storing something untestable.
+
+Embedded credentials (`https://user:pass@example.com/`) are stripped rather than stored. PageSpeed fetches the page from Google's own infrastructure, where userinfo in a URL is not honoured, so keeping them would write a password in plaintext to the database and to every screen that lists monitored URLs without making a protected staging site testable.
+
+### Registering URLs from another package
+
+```php
+use ArtisanPackUI\PageSpeedInsights\Urls\UrlRegistry;
+
+addFilter( UrlRegistry::FILTER_REGISTER_URLS, function ( array $urls ): array {
+    return [
+        ...$urls,
+        'https://example.com/checkout',
+        [ 'url' => 'https://example.com/cart', 'label' => 'Cart', 'strategies' => [ 'mobile' ] ],
+    ];
+} );
+```
+
+The hook name is `ap.pageSpeed.registerUrls`. Entries may be a URL string, an attribute array carrying at least a `url` key, or a `PageSpeedUrl` instance; `source` is always recorded as `hook` regardless of what the entry says.
+
+Hook URLs are returned as **unsaved** models. A package that registers `/checkout` and is later uninstalled should stop contributing that URL, not leave behind a row nobody remembers adding — so they gain no history and do not appear in the management UI until something calls `$registry->persistHookUrls()`. Where a hook and a stored row name the same page, the stored row wins: it is the one with history, a label somebody wrote, and an `is_active` flag somebody chose.
+
+An entry that cannot be used — a `mailto:` URL, a blank string, an array with no `url` key — is dropped and logged rather than throwing, so one broken callback in an unrelated package cannot take down the monitored set.
+
+### Sitemap discovery
+
+```bash
+php artisan pagespeed:discover-sitemap
+php artisan pagespeed:discover-sitemap --sitemap=https://example.com/sitemap_index.xml --limit=200
+php artisan pagespeed:discover-sitemap --activate
+```
+
+The command reads the site's sitemap, follows sitemap index files, and stores what it finds as `source=sitemap`. **Discovered URLs are inactive unless you pass `--activate`.** A 500-page sitemap activated in one command is 1,000 API requests per cycle against a quota you have not looked at yet; reviewing the list and turning on the pages that matter costs far less than discovering a burned quota.
+
+Configure the defaults under `pagespeed-insights.sitemap`:
+
+| Key | Env | Default | Meaning |
+|---|---|---|---|
+| `url` | `PAGESPEED_SITEMAP_URL` | null | The sitemap to read. Null means `sitemap.xml` at `app.url`. |
+| `limit` | `PAGESPEED_SITEMAP_LIMIT` | 50 | The most URLs one run will discover. |
+| `timeout` | `PAGESPEED_SITEMAP_TIMEOUT` | 15 | Seconds per sitemap document. An index file means one run fetches several. |
+
+Parsing is tolerant of what real sitemaps look like: a truncated document still yields the entries above the damage, a child sitemap that 404s is skipped rather than aborting its siblings, and namespace prefixes parse the same as the default namespace. The sitemap you actually named is the exception — if that one cannot be fetched or parsed, the command fails with the reason rather than reporting zero URLs found.
+
+A response that parses but is not rooted at `<urlset>` or `<sitemapindex>` is rejected by name. This matters because recovery-mode parsing happily reads an HTML error page, and a custom 404 served with a 200 status is common — without the check, a wrong address would report "0 URLs found" rather than saying what it actually got.
+
+A sitemap index may only point at sitemaps on its own host; a child on a different host is skipped and logged. Redirects are followed for the sitemap you name — so `example.com/sitemap.xml` redirecting to `www.example.com/sitemap.xml` works — but never for a sitemap that a document pointed at, since the host check runs before the request and a redirect would step around it. This is what the sitemaps.org protocol requires, and it keeps a sitemap from becoming a list of addresses your application will fetch on the author's behalf — loopback services and cloud metadata endpoints included. Page URLs on other hosts are still discovered, because those are fetched by Google rather than by your server.
+
+`SitemapDiscoverer` is available directly when you need the list without storing it:
+
+```php
+use ArtisanPackUI\PageSpeedInsights\Urls\SitemapDiscoverer;
+
+$found = app( SitemapDiscoverer::class )->discover( 'https://example.com/sitemap.xml', 100 );
+```
+
 ## Development
 
 ```bash

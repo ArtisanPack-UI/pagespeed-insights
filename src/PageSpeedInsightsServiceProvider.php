@@ -25,8 +25,11 @@ use ArtisanPackUI\PageSpeedInsights\Api\PageSpeedClient;
 use ArtisanPackUI\PageSpeedInsights\Configuration\CmsSettingsDriver;
 use ArtisanPackUI\PageSpeedInsights\Configuration\ConfigDriver;
 use ArtisanPackUI\PageSpeedInsights\Configuration\DatabaseDriver;
+use ArtisanPackUI\PageSpeedInsights\Console\Commands\DiscoverSitemapCommand;
 use ArtisanPackUI\PageSpeedInsights\Contracts\ApiKeyRepository;
 use ArtisanPackUI\PageSpeedInsights\Support\GoogleConnectionResolver;
+use ArtisanPackUI\PageSpeedInsights\Urls\SitemapDiscoverer;
+use ArtisanPackUI\PageSpeedInsights\Urls\UrlRegistry;
 use Illuminate\Contracts\Foundation\Application;
 use Illuminate\Http\Client\Factory as HttpFactory;
 use Illuminate\Support\ServiceProvider;
@@ -55,6 +58,7 @@ class PageSpeedInsightsServiceProvider extends ServiceProvider
 
         $this->registerApiKeyDrivers();
         $this->registerApiClient();
+        $this->registerUrlServices();
 
         $this->app->singleton( 'pagespeed-insights', function (): PageSpeedInsights {
             return new PageSpeedInsights();
@@ -82,8 +86,41 @@ class PageSpeedInsightsServiceProvider extends ServiceProvider
 
         $this->registerCmsSettings();
 
+        if ( $this->app->runningInConsole() ) {
+            $this->commands( [
+                DiscoverSitemapCommand::class,
+            ] );
+        }
+
         // Routes, views, Livewire components, and the CMS-framework
         // AdminWidget bridge are registered here as each is built.
+    }
+
+    /**
+     * Bind the monitored-URL services.
+     *
+     * The registry is a plain bind rather than a singleton because the hook
+     * side of the monitored set is assembled at read time: a package that
+     * registers its URLs late, or a test that adds a filter callback
+     * mid-request, must be visible to the next read rather than to the next
+     * process.
+     *
+     * @since 1.0.0
+     *
+     * @return void
+     */
+    protected function registerUrlServices(): void
+    {
+        $this->app->bind(
+            UrlRegistry::class,
+            fn ( Application $app ): UrlRegistry => new UrlRegistry( $app[ 'log' ] ),
+        );
+
+        $this->app->bind( SitemapDiscoverer::class, fn ( Application $app ): SitemapDiscoverer => new SitemapDiscoverer(
+            $app->make( HttpFactory::class ),
+            $app[ 'config' ],
+            $app[ 'log' ],
+        ) );
     }
 
     /**
