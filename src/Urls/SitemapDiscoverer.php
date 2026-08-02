@@ -105,6 +105,20 @@ class SitemapDiscoverer
     public const DEFAULT_PATH = '/sitemap.xml';
 
     /**
+     * libxml's `XML_PARSE_RECOVER` parse option.
+     *
+     * Written as its value rather than as `LIBXML_RECOVER` because PHP only
+     * exposes that constant from 8.4 onwards and this package supports 8.2.
+     * The underlying flag is part of libxml2's public enum and has been 1
+     * since 2.6, so the value is as stable as the constant would be.
+     *
+     * @since 1.0.0
+     *
+     * @var int
+     */
+    protected const RECOVER = 1;
+
+    /**
      * Sitemap documents already fetched during the current run.
      *
      * @since 1.0.0
@@ -390,9 +404,9 @@ class SitemapDiscoverer
 
         // LIBXML_NONET blocks the parser from fetching anything the document
         // names; entity substitution is left off so an untrusted sitemap
-        // cannot turn into a file read. RECOVER is what makes a truncated
-        // document still yield the entries above the truncation.
-        $xml = simplexml_load_string( $body, SimpleXMLElement::class, LIBXML_NONET | LIBXML_NOCDATA | LIBXML_RECOVER );
+        // cannot turn into a file read. self::RECOVER is what makes a
+        // truncated document still yield the entries above the truncation.
+        $xml = simplexml_load_string( $body, SimpleXMLElement::class, LIBXML_NONET | LIBXML_NOCDATA | self::RECOVER );
 
         $errors = libxml_get_errors();
         libxml_clear_errors();
