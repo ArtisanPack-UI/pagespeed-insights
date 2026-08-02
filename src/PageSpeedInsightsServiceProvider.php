@@ -20,12 +20,17 @@ declare( strict_types=1 );
 
 namespace ArtisanPackUI\PageSpeedInsights;
 
+use ArtisanPackUI\Google\Tokens\TokenManager;
+use ArtisanPackUI\PageSpeedInsights\Api\PageSpeedClient;
 use ArtisanPackUI\PageSpeedInsights\Configuration\CmsSettingsDriver;
 use ArtisanPackUI\PageSpeedInsights\Configuration\ConfigDriver;
 use ArtisanPackUI\PageSpeedInsights\Configuration\DatabaseDriver;
 use ArtisanPackUI\PageSpeedInsights\Contracts\ApiKeyRepository;
+use ArtisanPackUI\PageSpeedInsights\Support\GoogleConnectionResolver;
 use Illuminate\Contracts\Foundation\Application;
+use Illuminate\Http\Client\Factory as HttpFactory;
 use Illuminate\Support\ServiceProvider;
+use Throwable;
 
 /**
  * Service provider for the PageSpeedInsights package.
@@ -49,6 +54,7 @@ class PageSpeedInsightsServiceProvider extends ServiceProvider
         $this->mergeConfigFrom( __DIR__ . '/../config/pagespeed-insights.php', 'pagespeed-insights' );
 
         $this->registerApiKeyDrivers();
+        $this->registerApiClient();
 
         $this->app->singleton( 'pagespeed-insights', function (): PageSpeedInsights {
             return new PageSpeedInsights();
@@ -78,6 +84,51 @@ class PageSpeedInsightsServiceProvider extends ServiceProvider
 
         // Routes, views, Livewire components, and the CMS-framework
         // AdminWidget bridge are registered here as each is built.
+    }
+
+    /**
+     * Bind the PageSpeed API client.
+     *
+     * Bound rather than made a singleton so that each resolve re-reads the
+     * configured driver, endpoint, and logger — the same reason
+     * `ApiKeyRepository` is a plain bind.
+     *
+     * The token manager is optional at runtime even though
+     * `artisanpack-ui/google` is a required dependency: the base package can
+     * be present without ever having been migrated or connected, and the
+     * client's OAuth tier is a fallback, not a requirement.
+     *
+     * @since 1.0.0
+     *
+     * @return void
+     */
+    protected function registerApiClient(): void
+    {
+        $this->app->singleton(
+            GoogleConnectionResolver::class,
+            fn (): GoogleConnectionResolver => new GoogleConnectionResolver(),
+        );
+
+        $this->app->bind( PageSpeedClient::class, function ( Application $app ): PageSpeedClient {
+            $tokens = null;
+
+            if ( class_exists( TokenManager::class ) ) {
+                try {
+                    $tokens = $app->make( TokenManager::class );
+                } catch ( Throwable ) {
+                    $tokens = null;
+                }
+            }
+
+            return new PageSpeedClient(
+                $app->make( HttpFactory::class ),
+                $app[ 'config' ],
+                $app->make( ApiKeyRepository::class ),
+                $app->make( GoogleConnectionResolver::class ),
+                $app[ 'log' ],
+                $tokens,
+            );
+        } );
     }
 
     /**

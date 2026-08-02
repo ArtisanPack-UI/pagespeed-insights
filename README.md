@@ -37,11 +37,22 @@ The service provider and the `PageSpeedInsights` facade are auto-discovered by L
 
 The PageSpeed Insights API is quota-limited per project. Keyless requests are **not** a workable fallback — the shared anonymous project currently has a daily quota of zero — so an API key is effectively required.
 
-Create one in the [Google Cloud Console](https://console.cloud.google.com/apis/credentials) with the **PageSpeed Insights API** enabled on the project, then add it to your environment:
+### Creating one
+
+1. Open the [Google Cloud Console](https://console.cloud.google.com/) and sign in.
+2. Pick an existing project from the project selector, or create a new one (**New project** → name it → **Create**).
+3. Enable the API for that project: go to [PageSpeed Insights API](https://console.cloud.google.com/apis/library/pagespeedonline.googleapis.com) in the API Library and click **Enable**. The key will not work until this is done, even if the key itself exists.
+4. Go to **APIs & Services → Credentials** ([direct link](https://console.cloud.google.com/apis/credentials)) and click **Create credentials → API key**. Copy the key it shows you.
+5. Click **Edit API key** and, under **API restrictions**, choose **Restrict key** and select **PageSpeed Insights API**. Leave **Application restrictions** set to **None** — the requests come from your server, not a browser, and an HTTP-referrer restriction would reject them.
+6. Add it to your environment:
 
 ```dotenv
 PAGESPEED_API_KEY=your-key-here
 ```
+
+Billing is not required. Google does not publish the quota numbers for keyed projects anywhere; check **APIs & Services → PageSpeed Insights API → Quotas** in the Console for the limits that actually apply to yours.
+
+The key is sent on the `X-goog-api-key` header rather than as a `key=` query parameter, so it never appears in a URL — a URL-borne key ends up in connection-error messages, exception reports, and proxy logs.
 
 ### Where the key is stored
 
@@ -71,6 +82,52 @@ PageSpeedInsights::config()->save( 'new-key' ); // database and cms drivers only
 ```
 
 See [`docs/psi-api-reference.md`](docs/psi-api-reference.md) for the verified API behaviour the implementation is built against.
+
+## Running a test
+
+```php
+use ArtisanPackUI\PageSpeedInsights\Facades\PageSpeedInsights;
+
+$result = PageSpeedInsights::test( 'https://example.com/', 'mobile' );
+
+$result->scores->performance();                    // 0-100, or null when unscored
+$result->scores->bestPractices();
+$result->labMetrics->largestContentfulPaint();     // milliseconds, or null
+$result->effectiveFieldData()?->overallCategory(); // FAST / AVERAGE / SLOW from CrUX
+$result->opportunities;                            // pruned, sorted by estimated saving
+```
+
+A run takes 20–60 seconds and sometimes longer, so call it from a queued job or a console command, never from a web request.
+
+### Failure modes
+
+Three exception types, because at the HTTP layer these look alike and each needs a different response:
+
+| Exception | Cause | What to do |
+|---|---|---|
+| `MissingApiKeyException` | No API key configured | Configure one. `isRetryable()` is false — retrying never helps. |
+| `QuotaExceededException` | A keyed project is out of quota | Back off and try later. |
+| `PageSpeedApiException` | Transport failure, API error, or Lighthouse's own `runtimeError` | Usually retryable. |
+
+Note that an unkeyed request and an exhausted project both return HTTP 429, so the client checks whether a key was configured before classifying one — the first is a configuration problem, not quota exhaustion.
+
+### Thin results
+
+The parser tolerates unknown Lighthouse categories, absent categories, missing lab metrics, and missing CrUX data rather than failing the run — but it never does so silently. Every skip is logged with the key it skipped, and carried on the result:
+
+```php
+$result->hasWarnings();
+$result->warnings();               // run_warnings, unrecognized_categories, missing_categories, missing_metrics, missing_field_data
+$result->scores->unrecognized();   // e.g. ['agentic-browsing'] after a Lighthouse release
+```
+
+Consumers can reshape the pruned opportunity list before it is returned:
+
+```php
+addFilter( 'ap.pageSpeed.opportunities', function ( array $opportunities, PageSpeedRequest $request ): array {
+    return array_filter( $opportunities, fn ( $o ) => 'redirects' !== $o->id );
+} );
+```
 
 ## Development
 

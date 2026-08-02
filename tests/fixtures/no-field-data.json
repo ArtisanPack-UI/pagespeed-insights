@@ -1,0 +1,74 @@
+{
+    "captchaResult": "CAPTCHA_NOT_NEEDED",
+    "kind": "pagespeedonline#result",
+    "id": "https://example.com/rarely-visited",
+    "analysisUTCTimestamp": "2026-08-01T15:02:44.331Z",
+    "version": { "major": 5, "minor": 0 },
+    "lighthouseResult": {
+        "requestedUrl": "https://example.com/rarely-visited",
+        "finalUrl": "https://example.com/rarely-visited",
+        "finalDisplayedUrl": "https://example.com/rarely-visited",
+        "lighthouseVersion": "12.6.1",
+        "fetchTime": "2026-08-01T15:02:41.884Z",
+        "runWarnings": [],
+        "configSettings": { "formFactor": "desktop", "locale": "en-US" },
+        "categories": {
+            "performance": { "id": "performance", "title": "Performance", "score": 0.88 },
+            "accessibility": { "id": "accessibility", "title": "Accessibility", "score": 0.93 },
+            "best-practices": { "id": "best-practices", "title": "Best Practices", "score": 1 },
+            "seo": { "id": "seo", "title": "SEO", "score": 0.91 }
+        },
+        "audits": {
+            "first-contentful-paint": {
+                "id": "first-contentful-paint",
+                "title": "First Contentful Paint",
+                "score": 0.91,
+                "numericValue": 1402.6,
+                "numericUnit": "millisecond",
+                "displayValue": "1.4 s"
+            },
+            "largest-contentful-paint": {
+                "id": "largest-contentful-paint",
+                "title": "Largest Contentful Paint",
+                "score": 0.79,
+                "numericValue": 2410.9,
+                "numericUnit": "millisecond",
+                "displayValue": "2.4 s"
+            },
+            "total-blocking-time": {
+                "id": "total-blocking-time",
+                "title": "Total Blocking Time",
+                "score": 0.94,
+                "numericValue": 130,
+                "numericUnit": "millisecond",
+                "displayValue": "130 ms"
+            },
+            "cumulative-layout-shift": {
+                "id": "cumulative-layout-shift",
+                "title": "Cumulative Layout Shift",
+                "score": 0.99,
+                "numericValue": 0.031,
+                "numericUnit": "unitless",
+                "displayValue": "0.031"
+            },
+            "speed-index": {
+                "id": "speed-index",
+                "title": "Speed Index",
+                "score": 0.86,
+                "numericValue": 2104.2,
+                "numericUnit": "millisecond",
+                "displayValue": "2.1 s"
+            },
+            "uses-text-compression": {
+                "id": "uses-text-compression",
+                "title": "Enable text compression",
+                "score": 0.61,
+                "numericValue": 300,
+                "numericUnit": "millisecond",
+                "displayValue": "Potential savings of 62 KiB",
+                "metricSavings": { "FCP": 280, "LCP": 300 },
+                "details": { "type": "opportunity", "overallSavingsMs": 300 }
+            }
+        }
+    }
+}

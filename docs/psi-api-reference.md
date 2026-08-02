@@ -44,6 +44,14 @@ superset of the published reference table.
 | `utm_source` | string | no | no | — |
 | `key` | string | no | no | API key; appended to the URL, no encoding needed |
 
+**Prefer the `X-goog-api-key` header over `key=`.** Verified working against
+`runPagespeed` on 2026-08-02 (HTTP 200 with the header alone, no `key=`
+parameter). It is not in the published parameter table because it is not a
+parameter — it is the standard Google APIs header form, and it keeps the
+credential out of URLs. That matters because Guzzle appends the full request
+URI to its connection-error messages, so a URL-borne key lands in exception
+reports and logs verbatim. This package sends the header.
+
 Notes that matter for the client:
 
 - **Request enum casing differs from response key casing.** The request takes
@@ -66,8 +74,10 @@ Notes that matter for the client:
 The published documentation does **not** state quota numbers anywhere — not in
 the Get Started guide, the API reference, or the FAQ. What is verifiable:
 
-**Keyless requests are effectively dead.** A live keyless request on
-2026-08-01 returned HTTP `429` with:
+**Keyless requests are effectively dead.** Reproduced twice — 2026-08-01 and
+again on 2026-08-02, where the identical request returned 200 with a key on
+the `X-goog-api-key` header and 429 with no credential at all. The 2026-08-01
+probe returned HTTP `429` with:
 
 ```
 Quota exceeded for quota metric 'Queries' and limit 'Queries per day'
@@ -124,13 +134,24 @@ Fields: `id`, `initial_url`, `metrics`, `origin_fallback`, `overall_category`
 `UserPageLoadMetricV5` fields: `category`, `distributions`, `formFactor`,
 `median`, `metricId`, `percentile`.
 
-> **Open item for the API-client issue.** The discovery document's description
-> of `percentile` says *"For v4, this field contains pc50. For v5, this field
+> **Resolved 2026-08-02: it is p75.** The discovery document's description of
+> `percentile` says *"For v4, this field contains pc50. For v5, this field
 > contains pc90."* That conflicts with CrUX's own documentation, which states
-> Core Web Vitals are reported at **p75**. The description reads as stale.
-> Confirm against a real keyed response before writing the field-data parser,
-> and label the number correctly in the UI — showing a p75 as a p90 (or vice
-> versa) is a silent correctness bug.
+> Core Web Vitals are reported at **p75**. Live keyed responses settle it in
+> CrUX's favour — **the discovery description is stale.**
+>
+> Method: each metric's reported value can be located within its own
+> `distributions` buckets, which bounds the percentile rank it must
+> correspond to. Across 20 metrics from real page-level and origin-level
+> datasets, every bound was consistent with p75 and 8 were incompatible with
+> p90 — the value sat in a bucket whose cumulative proportion had not yet
+> reached 0.90, so a 90th percentile would necessarily have been larger.
+>
+> Example (`www.php.net`, page-level `FIRST_CONTENTFUL_PAINT_MS`): reported
+> percentile `1654` falls in the first bucket, whose cumulative proportion
+> range is `[0, 0.789)`. p75 fits; p90 cannot.
+>
+> `Data\FieldData::PERCENTILE` carries the constant `75`.
 
 `distributions` is an array of `Bucket` whose proportions sum to 1.
 
@@ -141,9 +162,26 @@ For reference, the standalone CrUX API uses lower-snake metric keys
 `loadingExperience.metrics` has historically used upper-snake keys
 (`LARGEST_CONTENTFUL_PAINT_MS`, `INTERACTION_TO_NEXT_PAINT`,
 `CUMULATIVE_LAYOUT_SHIFT_SCORE`, `FIRST_CONTENTFUL_PAINT_MS`,
-`EXPERIMENTAL_TIME_TO_FIRST_BYTE`). **The exact PSI-side keys could not be
-confirmed live** because the keyless probe was quota-blocked; capture them
-from a real keyed response when building the fixtures.
+`EXPERIMENTAL_TIME_TO_FIRST_BYTE`). **Confirmed live on 2026-08-02** against
+a keyed response — PSI returns exactly those five upper-snake keys:
+
+```
+CUMULATIVE_LAYOUT_SHIFT_SCORE
+EXPERIMENTAL_TIME_TO_FIRST_BYTE
+FIRST_CONTENTFUL_PAINT_MS
+INTERACTION_TO_NEXT_PAINT
+LARGEST_CONTENTFUL_PAINT_MS
+```
+
+`metrics` is still an open map in the schema, so `Data\FieldData` matches
+**both** spellings for each Core Web Vital — the upper-snake PSI form and the
+lower-snake standalone-CrUX form — and keeps every key it finds under its raw
+name, so a spelling neither list anticipated stays readable through
+`metric()`. The checked-in fixtures use the upper-snake form.
+
+Observed `loadingExperience` top-level keys: `id`, `metrics`,
+`overall_category`, `initial_url`. Note that `origin_fallback` is **absent
+when false** rather than present-and-false.
 
 ### `lighthouseResult` (`LighthouseResultV5`)
 
@@ -167,7 +205,40 @@ Fields: `audits`, `categories`, `categoryGroups`, `configSettings`, `entities`,
 `LighthouseAuditResultV5` fields: `description`, `details`, `displayValue`,
 `errorMessage`, `explanation`, `id`, `metricSavings`, `numericUnit`,
 `numericValue`, `score`, `scoreDisplayMode`, `title`, `warnings`.
-`metricSavings` is the field to pull for the pruned opportunities extract.
+
+### Identifying opportunities (verified against Lighthouse 13.4.1, 2026-08-02)
+
+`metricSavings` alone is **not** enough to identify an opportunity. Three
+things about the live data make a naive filter wrong:
+
+1. **Lighthouse attaches `metricSavings` to almost everything**, including
+   diagnostics and informational audits. On a page scoring 100, 22 audits
+   carried `metricSavings` — every one of them `{"LCP":0,"FCP":0}` or
+   similar. Filtering on "has metricSavings" reports a perfect page as having
+   work to do.
+2. **Diagnostics carry `score: null` with `scoreDisplayMode: "notApplicable"`**
+   (`long-tasks`, `layout-shifts`, `bootup-time`,
+   `non-composited-animations`). A null score is neither passing nor failing,
+   so a "score < 1" test lets them through. `notApplicable`, `informative`,
+   `manual`, and `error` are Lighthouse's markers for "not a scored,
+   actionable finding".
+3. **`numericValue` is a measurement, not a saving**, even when
+   `numericUnit` is `millisecond`. `mainthread-work-breakdown` reports how
+   long the main thread was busy. Only `details.overallSavingsMs` is a
+   saving — and Lighthouse 13's newer `*-insight` audits
+   (`render-blocking-insight`, `font-display-insight`) omit it entirely,
+   carrying the estimate only in `metricSavings`.
+
+`details.type === "opportunity"` still exists in Lighthouse 13 (5 audits in
+the sample), but no longer covers the `*-insight` audits that hold the real
+estimates, so it cannot be the sole test either.
+
+The rule this package settled on: skip the non-actionable display modes, skip
+passing audits (`score >= 1`), require the audit to be opportunity-shaped
+(`details.type === "opportunity"` **or** non-empty `metricSavings`, which
+keeps the five lab-metric audits out), and require a positive estimated
+saving. Verified live: a page scoring 100 yields 0 opportunities, and one
+scoring 95 yields 2 real ones.
 
 ## Lighthouse scoring
 

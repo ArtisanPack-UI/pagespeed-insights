@@ -1,0 +1,23 @@
+{
+    "captchaResult": "CAPTCHA_NOT_NEEDED",
+    "kind": "pagespeedonline#result",
+    "id": "https://example.com/broken",
+    "analysisUTCTimestamp": "2026-08-01T15:31:58.140Z",
+    "version": { "major": 5, "minor": 0 },
+    "lighthouseResult": {
+        "requestedUrl": "https://example.com/broken",
+        "finalUrl": "https://example.com/broken",
+        "lighthouseVersion": "12.6.1",
+        "fetchTime": "2026-08-01T15:31:55.002Z",
+        "runtimeError": {
+            "code": "ERRORED_DOCUMENT_REQUEST",
+            "message": "Lighthouse was unable to reliably load the page you requested. Make sure you are testing the correct URL and that the server is properly responding to all requests. (Status code: 503)"
+        },
+        "runWarnings": [],
+        "configSettings": { "formFactor": "mobile", "locale": "en-US" },
+        "categories": {
+            "performance": { "id": "performance", "title": "Performance", "score": null }
+        },
+        "audits": {}
+    }
+}

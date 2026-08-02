@@ -19,7 +19,11 @@ declare( strict_types=1 );
 
 namespace ArtisanPackUI\PageSpeedInsights;
 
+use ArtisanPackUI\PageSpeedInsights\Api\PageSpeedClient;
+use ArtisanPackUI\PageSpeedInsights\Api\PageSpeedRequest;
 use ArtisanPackUI\PageSpeedInsights\Contracts\ApiKeyRepository;
+use ArtisanPackUI\PageSpeedInsights\Data\TestResult;
+use ArtisanPackUI\PageSpeedInsights\Exceptions\PageSpeedApiException;
 
 /**
  * Convenience aggregator for the PageSpeedInsights services.
@@ -71,5 +75,43 @@ class PageSpeedInsights
     public function config(): ApiKeyRepository
     {
         return app( ApiKeyRepository::class );
+    }
+
+    /**
+     * The PageSpeed API client.
+     *
+     * Resolved on each call for the same reason as {@see self::config()}: the
+     * client reads the configured driver, endpoint, and timeout when it is
+     * built, and this class outlives all three.
+     *
+     * @since 1.0.0
+     *
+     * @return PageSpeedClient The API client.
+     */
+    public function client(): PageSpeedClient
+    {
+        return app( PageSpeedClient::class );
+    }
+
+    /**
+     * Run a PageSpeed test synchronously.
+     *
+     * Blocks for as long as Google takes, which is 20-60 seconds and
+     * sometimes longer, so this belongs in a queued job or a console command
+     * rather than a web request.
+     *
+     * @since 1.0.0
+     *
+     * @param  string  $url  Absolute http(s) URL to test.
+     * @param  string  $strategy  mobile or desktop.
+     * @param  string|null  $locale  Optional BCP-47 locale for the returned strings.
+     *
+     * @throws PageSpeedApiException When the run could not be completed.
+     *
+     * @return TestResult The parsed result.
+     */
+    public function test( string $url, string $strategy = PageSpeedRequest::STRATEGY_MOBILE, ?string $locale = null ): TestResult
+    {
+        return $this->client()->test( $url, $strategy, $locale );
     }
 }
