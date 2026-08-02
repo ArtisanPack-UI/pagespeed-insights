@@ -4,6 +4,7 @@ declare( strict_types=1 );
 
 namespace Tests;
 
+use ArtisanPackUI\Hooks\Providers\HooksServiceProvider;
 use ArtisanPackUI\PageSpeedInsights\PageSpeedInsightsServiceProvider;
 use Orchestra\Testbench\TestCase as BaseTestCase;
 
@@ -29,6 +30,7 @@ abstract class TestCase extends BaseTestCase
     protected function getPackageProviders( $app ): array
     {
         return [
+            HooksServiceProvider::class,
             PageSpeedInsightsServiceProvider::class,
         ];
     }
