@@ -27,6 +27,18 @@ it( 'falls back to the largest per-metric saving when there is no overall one', 
         ->and( $opportunity->weight() )->toBe( 90.0 );
 } );
 
+it( 'takes the larger estimate when the two disagree', function (): void {
+    $opportunity = new Opportunity(
+        id: 'render-blocking-insight',
+        title: 'Render blocking requests',
+        score: 0.0,
+        savingsMs: 0.0,
+        metricSavings: [ 'FCP' => 1900.0, 'LCP' => 2100.0 ],
+    );
+
+    expect( $opportunity->weight() )->toBe( 2100.0 );
+} );
+
 it( 'weighs an opportunity with no savings at all as zero', function (): void {
     $opportunity = new Opportunity( id: 'some-audit', title: 'Some audit' );
 

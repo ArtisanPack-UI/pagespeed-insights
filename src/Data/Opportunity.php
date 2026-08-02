@@ -69,7 +69,13 @@ class Opportunity
     }
 
     /**
-     * How much this opportunity is worth, for sorting.
+     * How much this opportunity is worth, for sorting and for deciding
+     * whether it is actionable at all.
+     *
+     * Takes the larger of the two estimates rather than preferring one.
+     * Lighthouse 13's `*-insight` audits carry a real per-metric estimate
+     * with no `overallSavingsMs` at all, so preferring the overall figure
+     * would weigh a genuine opportunity at zero and prune it away.
      *
      * @since 1.0.0
      *
@@ -77,7 +83,7 @@ class Opportunity
      */
     public function weight(): float
     {
-        return $this->savingsMs ?? $this->largestMetricSaving();
+        return max( $this->savingsMs ?? 0.0, $this->largestMetricSaving() );
     }
 
     /**
