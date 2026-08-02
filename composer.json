@@ -1,0 +1,88 @@
+{
+  "name": "artisanpack-ui/pagespeed-insights",
+  "description": "Google PageSpeed Insights testing, score history, and UI components for ArtisanPack UI.",
+  "type": "library",
+  "license": "MIT",
+  "version": "1.0.0",
+  "keywords": [
+    "laravel",
+    "google",
+    "pagespeed",
+    "pagespeed-insights",
+    "lighthouse",
+    "core-web-vitals",
+    "performance",
+    "artisanpack-ui"
+  ],
+  "autoload": {
+    "psr-4": {
+      "ArtisanPackUI\\PageSpeedInsights\\": "src/"
+    },
+    "files": [
+      "src/helpers.php"
+    ]
+  },
+  "autoload-dev": {
+    "psr-4": {
+      "Tests\\": "tests/"
+    }
+  },
+  "authors": [
+    {
+      "name": "Jacob Martella",
+      "email": "me@jacobmartella.com"
+    }
+  ],
+  "require": {
+    "php": "^8.2",
+    "illuminate/support": "^10.0|^11.0|^12.0|^13.0",
+    "artisanpack-ui/core": "^1.0",
+    "artisanpack-ui/hooks": "^1.2",
+    "artisanpack-ui/google": "^1.0",
+    "guzzlehttp/guzzle": "^7.5"
+  },
+  "require-dev": {
+    "pestphp/pest": "^3.8|^4.0",
+    "pestphp/pest-plugin-laravel": "^3.2|^4.1",
+    "artisanpack-ui/code-style": "^1.1",
+    "artisanpack-ui/code-style-pint": "^1.1",
+    "dealerdirect/phpcodesniffer-composer-installer": "^1.0",
+    "laravel/pint": "^1.26",
+    "livewire/livewire": "^3.6",
+    "orchestra/testbench": "^10.2|^11.0",
+    "friendsofphp/php-cs-fixer": "^3.75"
+  },
+  "suggest": {
+    "livewire/livewire": "Required for the Blade / Livewire score, Core Web Vitals, opportunity, and trend components and the CMS-framework AdminWidget bridge.",
+    "artisanpack-ui/cms-framework": "Stores the PageSpeed API key via the CMS Settings module and registers the components as admin dashboard widgets.",
+    "artisanpack-ui/livewire-ui-components": "Renders the PageSpeed score, Core Web Vitals, and trend panels with x-artisanpack-* components."
+  },
+  "scripts": {
+    "lint": [
+      "./vendor/bin/php-cs-fixer fix --dry-run --diff",
+      "./vendor/bin/phpcs"
+    ],
+    "fix": "./vendor/bin/php-cs-fixer fix",
+    "cs": "./vendor/bin/phpcs",
+    "cs:fix": "./vendor/bin/phpcbf",
+    "test": "./vendor/bin/pest"
+  },
+  "config": {
+    "allow-plugins": {
+      "pestphp/pest-plugin": true,
+      "dealerdirect/phpcodesniffer-composer-installer": true
+    }
+  },
+  "extra": {
+    "laravel": {
+      "providers": [
+        "ArtisanPackUI\\PageSpeedInsights\\PageSpeedInsightsServiceProvider"
+      ],
+      "aliases": {
+        "PageSpeedInsights": "ArtisanPackUI\\PageSpeedInsights\\Facades\\PageSpeedInsights"
+      }
+    }
+  },
+  "minimum-stability": "stable",
+  "prefer-stable": true
+}
