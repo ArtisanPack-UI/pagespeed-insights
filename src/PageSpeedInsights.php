@@ -19,12 +19,14 @@ declare( strict_types=1 );
 
 namespace ArtisanPackUI\PageSpeedInsights;
 
+use ArtisanPackUI\PageSpeedInsights\Contracts\ApiKeyRepository;
+
 /**
  * Convenience aggregator for the PageSpeedInsights services.
  *
- * The scaffold exposes only the package version. The API client, URL
- * registry, and history readers are attached in the issues that build
- * them out.
+ * The scaffold exposes the package version and the API key repository. The
+ * API client, URL registry, and history readers are attached in the issues
+ * that build them out.
  *
  * @package    ArtisanPack_UI
  * @subpackage PageSpeedInsights
@@ -53,5 +55,21 @@ class PageSpeedInsights
     public function version(): string
     {
         return self::VERSION;
+    }
+
+    /**
+     * The API key repository backing the configured storage driver.
+     *
+     * Resolved on each call rather than injected so that a driver change
+     * (`config( 'pagespeed-insights.driver' )`) takes effect immediately —
+     * this class is a long-lived singleton.
+     *
+     * @since 1.0.0
+     *
+     * @return ApiKeyRepository The repository for the configured driver.
+     */
+    public function config(): ApiKeyRepository
+    {
+        return app( ApiKeyRepository::class );
     }
 }

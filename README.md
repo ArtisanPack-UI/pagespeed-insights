@@ -37,9 +37,40 @@ The service provider and the `PageSpeedInsights` facade are auto-discovered by L
 
 The PageSpeed Insights API is quota-limited per project. Keyless requests are **not** a workable fallback — the shared anonymous project currently has a daily quota of zero — so an API key is effectively required.
 
-Create one in the [Google Cloud Console](https://console.cloud.google.com/apis/credentials) with the **PageSpeed Insights API** enabled on the project.
+Create one in the [Google Cloud Console](https://console.cloud.google.com/apis/credentials) with the **PageSpeed Insights API** enabled on the project, then add it to your environment:
 
-Configuration is not wired up yet; see [`docs/psi-api-reference.md`](docs/psi-api-reference.md) for the verified API behaviour the implementation is built against.
+```dotenv
+PAGESPEED_API_KEY=your-key-here
+```
+
+### Where the key is stored
+
+`PAGESPEED_CONFIG_DRIVER` selects the storage driver, mirroring `GOOGLE_CONFIG_DRIVER` in [`artisanpack-ui/google`](https://github.com/ArtisanPack-UI/google):
+
+| Driver | Storage | Writable |
+|---|---|---|
+| `config` *(default)* | `PAGESPEED_API_KEY` / `config( 'pagespeed-insights.api_key' )` | No — managed through config/env |
+| `database` | `pagespeed_configurations` table, encrypted at rest | Yes |
+| `cms` | CMS framework Settings module, encrypted at rest | Yes — requires `artisanpack-ui/cms-framework` |
+
+Publish the config file and, for the `database` driver, run the migrations:
+
+```bash
+php artisan vendor:publish --tag=pagespeed-insights-config
+php artisan migrate
+```
+
+The key is reachable through `PageSpeedInsights::config()`, which returns the `ApiKeyRepository` for the active driver:
+
+```php
+use ArtisanPackUI\PageSpeedInsights\Facades\PageSpeedInsights;
+
+PageSpeedInsights::config()->isConfigured();    // false means PSI cannot run at all
+PageSpeedInsights::config()->getApiKey();
+PageSpeedInsights::config()->save( 'new-key' ); // database and cms drivers only
+```
+
+See [`docs/psi-api-reference.md`](docs/psi-api-reference.md) for the verified API behaviour the implementation is built against.
 
 ## Development
 
