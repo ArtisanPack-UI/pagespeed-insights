@@ -110,4 +110,35 @@ return [
     */
     'opportunities_limit' => 10,
 
+    /*
+    |--------------------------------------------------------------------------
+    | Default Test Frequency
+    |--------------------------------------------------------------------------
+    |
+    | How often a monitored URL is retested when its row carries no per-URL
+    | override. Supported: "hourly", "daily", "weekly", "monthly". Anything
+    | else falls back to "weekly".
+    |
+    | Bear the API quota in mind: each run costs one request per form factor,
+    | so 200 URLs on both mobile and desktop is 400 requests per cycle.
+    |
+    */
+    'test_frequency' => env( 'PAGESPEED_TEST_FREQUENCY', 'weekly' ),
+
+    /*
+    |--------------------------------------------------------------------------
+    | Store Raw Responses
+    |--------------------------------------------------------------------------
+    |
+    | Whether to keep the full runPagespeed payload on each stored result.
+    | Off by default: a single response runs to hundreds of kilobytes, so
+    | retaining every one grows the history table by two orders of magnitude
+    | for data the package already parses into its own columns.
+    |
+    | Worth turning on temporarily when diagnosing a parsing problem against
+    | real responses.
+    |
+    */
+    'store_raw_response' => env( 'PAGESPEED_STORE_RAW_RESPONSE', false ),
+
 ];

@@ -16,7 +16,8 @@
   ],
   "autoload": {
     "psr-4": {
-      "ArtisanPackUI\\PageSpeedInsights\\": "src/"
+      "ArtisanPackUI\\PageSpeedInsights\\": "src/",
+      "ArtisanPackUI\\PageSpeedInsights\\Database\\Factories\\": "database/factories/"
     },
     "files": [
       "src/helpers.php"
@@ -36,6 +37,7 @@
   "require": {
     "php": "^8.2",
     "illuminate/support": "^10.0|^11.0|^12.0|^13.0",
+    "illuminate/database": "^10.0|^11.0|^12.0|^13.0",
     "artisanpack-ui/core": "^1.0",
     "artisanpack-ui/hooks": "^1.2",
     "artisanpack-ui/google": "^1.0",
