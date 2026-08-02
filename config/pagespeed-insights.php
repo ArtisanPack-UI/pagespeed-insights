@@ -127,6 +127,29 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Sitemap Discovery
+    |--------------------------------------------------------------------------
+    |
+    | Settings for `php artisan pagespeed:discover-sitemap`, which populates
+    | the monitored set from the site's own sitemap.
+    |
+    | - "url"     the sitemap to read. Null means sitemap.xml at app.url.
+    | - "limit"   the most URLs one run will discover. The cap exists because
+    |             a large site lists thousands of pages and every activated
+    |             one costs quota on every cycle. Discovered URLs are stored
+    |             inactive unless the command is run with --activate.
+    | - "timeout" seconds to wait for a single sitemap document. Sitemap index
+    |             files are followed, so one run may fetch several.
+    |
+    */
+    'sitemap' => [
+        'url'     => env( 'PAGESPEED_SITEMAP_URL' ),
+        'limit'   => env( 'PAGESPEED_SITEMAP_LIMIT', 50 ),
+        'timeout' => env( 'PAGESPEED_SITEMAP_TIMEOUT', 15 ),
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
     | Store Raw Responses
     |--------------------------------------------------------------------------
     |
