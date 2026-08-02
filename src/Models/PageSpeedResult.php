@@ -461,25 +461,7 @@ class PageSpeedResult extends Model
      */
     public function warningList(): array
     {
-        $lines = $this->warningStrings( 'run_warnings' );
-
-        $templates = [
-            'missing_categories'      => 'PageSpeed did not return the ":name" category, so its score is null for this run.',
-            'unrecognized_categories' => 'PageSpeed returned a ":name" category this package has no column for, so it was not stored.',
-            'missing_metrics'         => 'PageSpeed did not return the ":name" lab metric.',
-        ];
-
-        foreach ( $templates as $key => $template ) {
-            foreach ( $this->warningStrings( $key ) as $name ) {
-                $lines[] = __( $template, [ 'name' => $name ] );
-            }
-        }
-
-        if ( true === ( $this->warnings[ 'missing_field_data' ] ?? false ) ) {
-            $lines[] = __( 'The Chrome UX Report had no real-user data for this page or its origin.' );
-        }
-
-        return $lines;
+        return TestResult::describeWarnings( (array) ( $this->warnings ?? [] ) );
     }
 
     /**

@@ -137,6 +137,54 @@ class TestResult
     }
 
     /**
+     * Everything this run warned about, as human-readable lines.
+     *
+     * @since 1.0.0
+     *
+     * @return array<int, string> The warning lines.
+     */
+    public function warningList(): array
+    {
+        return self::describeWarnings( $this->warnings() );
+    }
+
+    /**
+     * Turn a warning record into human-readable lines.
+     *
+     * Static and shape-driven so the CLI, which has a parsed run in hand, and
+     * a stored row, which has the same record in a json column, explain a thin
+     * result in the same words rather than in two drifting copies of them.
+     *
+     * @since 1.0.0
+     *
+     * @param  array<string, mixed>  $warnings  A warning record as {@see self::warnings()} builds one.
+     *
+     * @return array<int, string> The warning lines.
+     */
+    public static function describeWarnings( array $warnings ): array
+    {
+        $lines = self::warningStrings( $warnings, 'run_warnings' );
+
+        $templates = [
+            'missing_categories'      => 'PageSpeed did not return the ":name" category, so its score is null for this run.',
+            'unrecognized_categories' => 'PageSpeed returned a ":name" category this package has no column for, so it was not stored.',
+            'missing_metrics'         => 'PageSpeed did not return the ":name" lab metric.',
+        ];
+
+        foreach ( $templates as $key => $template ) {
+            foreach ( self::warningStrings( $warnings, $key ) as $name ) {
+                $lines[] = __( $template, [ 'name' => $name ] );
+            }
+        }
+
+        if ( true === ( $warnings[ 'missing_field_data' ] ?? false ) ) {
+            $lines[] = __( 'The Chrome UX Report had no real-user data for this page or its origin.' );
+        }
+
+        return $lines;
+    }
+
+    /**
      * The result as a plain array for storage.
      *
      * @since 1.0.0
@@ -161,5 +209,34 @@ class TestResult
             ),
             'warnings'           => $this->warnings(),
         ];
+    }
+
+    /**
+     * One list out of a warning record, reduced to its non-empty strings.
+     *
+     * @since 1.0.0
+     *
+     * @param  array<string, mixed>  $warnings  The warning record.
+     * @param  string  $key  The key to read.
+     *
+     * @return array<int, string> The strings, or an empty list.
+     */
+    protected static function warningStrings( array $warnings, string $key ): array
+    {
+        $value = $warnings[ $key ] ?? [];
+
+        if ( ! is_array( $value ) ) {
+            return [];
+        }
+
+        $strings = [];
+
+        foreach ( $value as $entry ) {
+            if ( is_string( $entry ) && '' !== trim( $entry ) ) {
+                $strings[] = $entry;
+            }
+        }
+
+        return $strings;
     }
 }

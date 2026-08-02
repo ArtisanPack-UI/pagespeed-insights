@@ -30,6 +30,7 @@ use ArtisanPackUI\PageSpeedInsights\Configuration\DatabaseDriver;
 use ArtisanPackUI\PageSpeedInsights\Console\Commands\DiscoverSitemapCommand;
 use ArtisanPackUI\PageSpeedInsights\Console\Commands\MonitorCommand;
 use ArtisanPackUI\PageSpeedInsights\Console\Commands\PruneCommand;
+use ArtisanPackUI\PageSpeedInsights\Console\Commands\TestCommand;
 use ArtisanPackUI\PageSpeedInsights\Contracts\ApiKeyRepository;
 use ArtisanPackUI\PageSpeedInsights\Jobs\Middleware\RateLimitPageSpeedRequests;
 use ArtisanPackUI\PageSpeedInsights\Scheduling\TestScheduler;
@@ -104,6 +105,7 @@ class PageSpeedInsightsServiceProvider extends ServiceProvider
                 DiscoverSitemapCommand::class,
                 MonitorCommand::class,
                 PruneCommand::class,
+                TestCommand::class,
             ] );
 
             $this->scheduleTasks();
