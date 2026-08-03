@@ -449,6 +449,99 @@ Two things worth knowing about that stack:
 - The default includes `web`, so **`POST` and `DELETE` requests need a CSRF token** like any other session-authenticated form post. Send `X-CSRF-TOKEN`, or move the endpoints onto a stateless stack (`['api', 'auth:sanctum']`, say) if you are calling them from something that has no session.
 - There is no `throttle` in the default stack. `POST /test` queues a job per call, and while the job middleware holds the whole application to `rate_limit.per_minute` API requests — so the quota itself is safe — nothing stops an authenticated user filling the queue. Add `throttle:30,1` to `routes.middleware` on an installation where "authenticated" is a low bar.
 
+## React components
+
+Five React components mirroring the five Livewire ones, built on [`@artisanpack-ui/react`](https://www.npmjs.com/package/@artisanpack-ui/react) and reading the JSON endpoints above. They ship as TypeScript sources rather than as a build, because they take their styling from the host application's Tailwind and daisyUI theme and so have to reach its pipeline before it compiles:
+
+```bash
+php artisan vendor:publish --tag=pagespeed-insights-js
+npm install @artisanpack-ui/react
+```
+
+That puts `resources/js/{react,shared}` under `resources/js/vendor/pagespeed-insights`. Import from the barrel:
+
+```tsx
+import {
+    ScoreCard,
+    CoreWebVitalsCard,
+    OpportunitiesTable,
+    TrendChart,
+    UrlManager,
+} from '@/../js/vendor/pagespeed-insights/react'
+
+export function Dashboard() {
+    return (
+        <>
+            <ScoreCard url="https://example.com/pricing" />
+            <CoreWebVitalsCard url="https://example.com/pricing" />
+            <OpportunitiesTable url="https://example.com/pricing" />
+            <TrendChart url="https://example.com/pricing" />
+            <UrlManager />
+        </>
+    )
+}
+```
+
+The barrel re-exports the components, their prop types, and the whole shared fetch layer, so an application writing its own UI can use the typed clients without the components.
+
+### Props
+
+| Prop | Components | Type | Default | Notes |
+|---|---|---|---|---|
+| `url` | all but `UrlManager` | `string` | — | The URL to read. Must be one this installation monitors. |
+| `strategy` | score card, vitals, opportunities | `'mobile' \| 'desktop'` | `'mobile'` | The form factor. |
+| `endpointBase` | all | `string` | `/pagespeed` | Set this when `routes.prefix` is not the default. |
+| `fetchImpl` | all | `typeof fetch` | `window.fetch` | Injectable fetch, for SSR and for tests. |
+| `csrfToken` | score card, URL manager | `string \| null` | `<meta name="csrf-token">` | Needed by the writing endpoints on the default `web` stack. |
+| `initialMetric`, `initialRange` | trend chart | `string`, `number` | `'performance'`, `90` | Which measurement is plotted first, and over how many days. |
+| `allowRunningTests` | score card | `boolean` | `true` | Whether to offer the "Run test" button. |
+| `onResultStored` | score card | `(id) => void` | — | Called with the stored result id once a queued run finishes. |
+
+### States
+
+Each component renders the same states its Livewire counterpart does, and for the same reason: a React card and a Livewire card describing the same stored row must not disagree about what it says. So "the Chrome UX Report has no data for this page" and "these numbers describe the whole site" stay two different messages, an unscored category renders as an em dash rather than a zero, and an empty opportunities list is spelled three ways — never measured, measured and clean, or the run failed.
+
+Two things are drawn by hand rather than by the component library:
+
+- **The trend line** is inline SVG. A trend carries one series per form factor, each on its own timestamps, with nulls where a completed run lost the measurement; the library's `Chart` takes a series as a plain `number[]` against shared labels, which expresses neither — and it pulls in ApexCharts, an optional peer a host application need not have installed. A gap in the history stays a gap in the line.
+- **The alerts** pair a title with a description, which the library's `Alert` takes as children.
+
+### Keeping the panels in step
+
+The score card is the only component that queues a run, so it is the only one that knows when a new row lands — and it announces it, exactly as the Livewire card dispatches `pagespeed-insights:result-stored`. The vitals card and the opportunities table refresh when the announcement names their URL *and* their form factor; the trend chart refreshes on either form factor, because it plots both. Without it a page shows fresh scores beside three panels describing the previous run, which reads as a page that has finished updating when it has not. A timed-out ticket announces nothing: no row appeared, so there is nothing for the others to re-read.
+
+The announcement is part of the shared layer rather than of the React components, so a page can join in from anywhere — including one built with neither component set, since it is also dispatched on `window`:
+
+```ts
+import { onPsiResultStored, PSI_EVENT_RESULT_STORED } from '@/../js/vendor/pagespeed-insights/shared'
+
+// In a React or Vue surface — returns an unsubscribe function.
+const stop = onPsiResultStored(({ url, strategy, id }) => reloadMyPanel(url, strategy))
+
+// Or, from a plain script on a Blade page.
+window.addEventListener(PSI_EVENT_RESULT_STORED, (event) => reloadMyPanel(event.detail))
+```
+
+React callers can use the `usePsiResultStored(handler)` hook instead, which subscribes for the life of the component and needs no memoised handler.
+
+### Shared fetch layer
+
+`resources/js/shared` is framework-free TypeScript: one typed client per endpoint (`scores.ts`, `core-web-vitals.ts`, `opportunities.ts`, `trends.ts`, `urls.ts`, `runs.ts`), the request plumbing they share (`client.ts`), and the names and colours the endpoints deliberately do not send (`labels.ts`). The Vue components will consume the same modules, so both frameworks talk to one server payload.
+
+Every refusal arrives as a `PageSpeedInsightsError` carrying the endpoint's stable `code` alongside its prose `message`, so a client branches on the code rather than on the wording:
+
+```ts
+import { fetchPsiScores, PageSpeedInsightsError } from '@/../js/vendor/pagespeed-insights/shared'
+
+try {
+    const scores = await fetchPsiScores({ url: 'https://example.com/pricing' })
+} catch (error) {
+    if (error instanceof PageSpeedInsightsError && 'url_not_monitored' === error.code) {
+        // Offer to add it to the monitored set.
+    }
+}
+```
+
 ## Retention
 
 Score history is the point of this package, and it is also the thing that grows without limit if nothing stops it: an hourly cadence on 200 URLs across both form factors writes about 3.5 million rows a year. So the package prunes itself.
@@ -482,6 +575,10 @@ composer install
 composer test    # Pest
 composer lint    # PHP-CS-Fixer (dry run) + PHPCS
 composer fix     # PHP-CS-Fixer, applied
+
+npm install
+npm test           # Vitest, against the React components
+npm run type-check # tsc --noEmit
 ```
 
 ## Contributing

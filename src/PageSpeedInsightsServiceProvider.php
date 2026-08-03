@@ -108,6 +108,14 @@ class PageSpeedInsightsServiceProvider extends ServiceProvider
             __DIR__ . '/../resources/views' => resource_path( 'views/vendor/pagespeed-insights' ),
         ], 'pagespeed-insights-views' );
 
+        // The React and Vue sources ship as TypeScript rather than as a build,
+        // because the components take their styling from the host
+        // application's Tailwind and daisyUI theme. Publishing them puts them
+        // where that build can see them.
+        $this->publishes( [
+            __DIR__ . '/../resources/js' => resource_path( 'js/vendor/pagespeed-insights' ),
+        ], 'pagespeed-insights-js' );
+
         $this->loadMigrationsFrom( __DIR__ . '/../database/migrations' );
         $this->loadViewsFrom( __DIR__ . '/../resources/views', 'pagespeed-insights' );
 
