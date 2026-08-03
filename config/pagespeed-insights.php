@@ -340,6 +340,48 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | HTTP Routes
+    |--------------------------------------------------------------------------
+    |
+    | The authenticated JSON endpoints that back the React and Vue components,
+    | and any front end an application writes for itself.
+    |
+    | - "enabled"             whether the routes are registered at all. Off is
+    |                         the right choice for an install that only uses
+    |                         the console commands, the queue, and the Livewire
+    |                         components: an endpoint nobody calls is still an
+    |                         endpoint somebody can call.
+    | - "prefix"              the path every endpoint sits under.
+    | - "middleware"          the stack they run through. `auth` is in the
+    |                         default for a reason — the endpoints read a
+    |                         site's performance history and one of them spends
+    |                         API quota — and removing it publishes both.
+    | - "allow_external_urls" whether `POST /test` and `POST /urls` accept a URL
+    |                         that is neither monitored nor on this
+    |                         application's own origin. Off by default: an ad
+    |                         hoc run spends a slice of the API quota, and
+    |                         monitoring a URL spends one on every cycle for as
+    |                         long as the row lives, so an authenticated user
+    |                         must not be able to point either at arbitrary
+    |                         third-party sites. Turn it on for an installation
+    |                         that legitimately monitors other people's sites —
+    |                         an agency dashboard, most obviously — and whose
+    |                         authenticated users are trusted to choose what
+    |                         gets tested.
+    |
+    | The read endpoints are never widened by this flag. They only ever answer
+    | for URLs in this installation's own monitored set, whatever it says.
+    |
+    */
+    'routes' => [
+        'enabled'             => true,
+        'prefix'              => 'pagespeed',
+        'middleware'          => [ 'web', 'auth' ],
+        'allow_external_urls' => env( 'PAGESPEED_ALLOW_EXTERNAL_URLS', false ),
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
     | Store Raw Responses
     |--------------------------------------------------------------------------
     |

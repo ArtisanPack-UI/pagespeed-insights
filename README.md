@@ -374,6 +374,81 @@ Note that the digest is a *delayed* job, and the `sync` queue driver ignores del
 
 Thresholds ship unset because a floor is a per-site judgement: guessed too high it alerts on everything, too low on nothing. With nobody in `alerts.mail_to` and no `alerts.notifiable`, detection still runs, still fires `ap.pageSpeed.scoreRegressed`, and still logs — it just has nowhere to send an email, which it says at debug level rather than silently.
 
+## HTTP API
+
+Authenticated JSON endpoints, behind `pagespeed` and the `web` and `auth` middleware by default. They back the React and Vue components and are the supported way to build a front end of your own.
+
+| Method | Path | Answers |
+|---|---|---|
+| `GET` | `/pagespeed/scores?url=&strategy=` | The newest run's four category scores and lab metrics. |
+| `GET` | `/pagespeed/core-web-vitals?url=&strategy=` | The newest run's CrUX field data, page-level and origin-level. |
+| `GET` | `/pagespeed/opportunities?url=&strategy=` | What Lighthouse says is worth fixing, heaviest first. |
+| `GET` | `/pagespeed/trends?url=&metric=&range=&strategy=` | One measurement over time, mobile against desktop. |
+| `GET` | `/pagespeed/urls` | The monitored set. |
+| `POST` | `/pagespeed/urls` | Start monitoring a URL. |
+| `DELETE` | `/pagespeed/urls/{id}` | Stop monitoring one. Its result history is kept. |
+| `POST` | `/pagespeed/test` | Queue an ad hoc run. Returns an id to poll with. |
+| `GET` | `/pagespeed/results/{id}` | Poll that id, or fetch any stored run by its own id. |
+
+Every response carries a `state` naming which of several honest answers it is, rather than leaving a caller to infer one from an empty list. An empty opportunities list means "nothing found" or "nothing looked for"; an empty vitals panel means "CrUX has no data" or "the run failed"; a blank trend means "no history" or "no history *in this range*". Those pairs have different remedies, so they are different states — `empty`, `failed`, `degraded`, `not-measured`, `none`, `origin-level`, `out-of-range`, `insufficient`, `loaded`, depending on the endpoint.
+
+Bands (`good`, `needs-improvement`, `poor`) are computed server-side against Google's published thresholds. Labels and colours are not sent: those are the client's to choose, and a JSON endpoint that baked them in would hand every caller a string in the server's locale.
+
+### Where the endpoints get their authority
+
+**These endpoints carry no authorization of their own beyond the configured middleware.** An authenticated user is an authorized one: whoever can reach `/pagespeed/urls` can add and remove monitored URLs, and whoever can reach `/pagespeed/test` can spend a slice of the API quota. That is the same stance the Livewire components take — mounting one is the authorization decision — and it is deliberate, because a package cannot know what an application's admin role is called.
+
+Put your own policy in `routes.middleware` (`['web', 'auth', 'can:manage-pagespeed']`, say) if "logged in" is broader than "allowed to manage performance monitoring" on your installation.
+
+### Which URLs an endpoint will answer for
+
+Within that grant, authentication is still not the whole of the question, because every endpoint takes a URL from the caller.
+
+- **The read endpoints only ever serve URLs in this installation's own monitored set** — stored rows and hook contributions both. Anything else is `403 url_not_monitored`, whatever the flag below says. The results table is keyed on a plain URL column, so without this an authenticated user could read whatever this installation happens to have stored about a third party's site.
+- **`POST /test` and `POST /urls` accept a monitored URL, or one on this application's own origin.** Both spend API quota — the first once, the second on every cycle for as long as the row lives — and an authenticated user must not be able to point that at arbitrary sites. Anything else is `403 url_not_allowed`.
+
+Set `routes.allow_external_urls` (or `PAGESPEED_ALLOW_EXTERNAL_URLS`) to `true` on an installation that legitimately monitors other people's sites — an agency dashboard, most obviously. It widens the two write endpoints and never the read ones.
+
+### Queueing a run
+
+```http
+POST /pagespeed/test
+{ "url": "https://example.com/pricing", "strategy": "mobile" }
+
+202 Accepted
+{ "id": "9f1c…", "status": "queued", "url": "https://example.com/pricing", "strategy": "mobile" }
+```
+
+Then poll:
+
+```http
+GET /pagespeed/results/9f1c…
+
+{ "id": 412, "status": "completed", "url": "…", "strategy": "mobile", "result": { … } }
+```
+
+The id is a ticket rather than a row id, because a queued run has no row until it finishes. Writing a pending row would have given you a real id immediately and put a third status into a table every other reader of which assumes two — the score card, the vitals card, and the opportunities table would all have started rendering an in-flight run as a completed one that measured nothing. So the ticket records what was queued and which result id was newest at the time, and resolves to the row the run produced.
+
+`status` is `queued`, `completed`, `failed`, or `timed-out`. The last is a real answer rather than an endless spinner: past ten minutes the ticket stops implying that waiting will help. It does not claim the run failed — it may still be queued — but a stalled queue worker must not present as a slow one.
+
+A numeric `{id}` is read as a stored result id instead, so any run you have the id of can be fetched in full later.
+
+### Configuration
+
+| Key | Env | Default | Meaning |
+|---|---|---|---|
+| `routes.enabled` | — | true | Whether the endpoints are registered at all. |
+| `routes.prefix` | — | `pagespeed` | The path they sit under. |
+| `routes.middleware` | — | `['web', 'auth']` | The stack they run through. |
+| `routes.allow_external_urls` | `PAGESPEED_ALLOW_EXTERNAL_URLS` | false | Whether `POST /test` and `POST /urls` accept URLs off this site. |
+
+All four are read when the service provider boots. Turning `routes.enabled` off registers nothing, which is the right choice for an installation that only uses the console commands, the queue, and the Livewire components — an endpoint nobody calls is still an endpoint somebody can call. Replacing `routes.middleware` replaces it wholesale, including the `auth` entry: the package applies the stack you configure rather than adding a guard of its own on top of it.
+
+Two things worth knowing about that stack:
+
+- The default includes `web`, so **`POST` and `DELETE` requests need a CSRF token** like any other session-authenticated form post. Send `X-CSRF-TOKEN`, or move the endpoints onto a stateless stack (`['api', 'auth:sanctum']`, say) if you are calling them from something that has no session.
+- There is no `throttle` in the default stack. `POST /test` queues a job per call, and while the job middleware holds the whole application to `rate_limit.per_minute` API requests — so the quota itself is safe — nothing stops an authenticated user filling the queue. Add `throttle:30,1` to `routes.middleware` on an installation where "authenticated" is a low bar.
+
 ## Retention
 
 Score history is the point of this package, and it is also the thing that grows without limit if nothing stops it: an hourly cadence on 200 URLs across both form factors writes about 3.5 million rows a year. So the package prunes itself.

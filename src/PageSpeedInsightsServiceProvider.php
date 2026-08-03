@@ -50,6 +50,7 @@ use Illuminate\Contracts\Cache\Factory as CacheFactory;
 use Illuminate\Contracts\Foundation\Application;
 use Illuminate\Contracts\Notifications\Dispatcher as NotificationDispatcher;
 use Illuminate\Http\Client\Factory as HttpFactory;
+use Illuminate\Support\Facades\Route;
 use Illuminate\Support\ServiceProvider;
 use Livewire\Livewire;
 use Throwable;
@@ -112,6 +113,7 @@ class PageSpeedInsightsServiceProvider extends ServiceProvider
 
         $this->registerCmsSettings();
         $this->registerLivewireComponents();
+        $this->registerRoutes();
 
         if ( $this->app->runningInConsole() ) {
             $this->commands( [
@@ -124,8 +126,39 @@ class PageSpeedInsightsServiceProvider extends ServiceProvider
             $this->scheduleTasks();
         }
 
-        // Routes and the CMS-framework AdminWidget bridge are registered
-        // here as each is built.
+        // The CMS-framework AdminWidget bridge is registered here as it is
+        // built.
+    }
+
+    /**
+     * Load the package's HTTP routes.
+     *
+     * Registered inside the configured prefix and middleware group rather than
+     * baked into the route file, so an application can move the endpoints,
+     * put its own authorization middleware in front of them, or switch them
+     * off entirely without publishing anything.
+     *
+     * The default middleware includes `auth` deliberately. These endpoints read
+     * a site's performance history and one of them spends API quota, so an
+     * installation that removes it is publishing both — which is a decision
+     * worth having to make on purpose.
+     *
+     * @since 1.0.0
+     *
+     * @return void
+     */
+    protected function registerRoutes(): void
+    {
+        if ( false === (bool) $this->app[ 'config' ]->get( 'pagespeed-insights.routes.enabled', true ) ) {
+            return;
+        }
+
+        Route::group( [
+            'prefix'     => (string) $this->app[ 'config' ]->get( 'pagespeed-insights.routes.prefix', 'pagespeed' ),
+            'middleware' => (array) $this->app[ 'config' ]->get( 'pagespeed-insights.routes.middleware', [ 'web', 'auth' ] ),
+        ], function (): void {
+            $this->loadRoutesFrom( __DIR__ . '/../routes/web.php' );
+        } );
     }
 
     /**
