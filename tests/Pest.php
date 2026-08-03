@@ -16,6 +16,11 @@
 
 require_once __DIR__ . '/Support/CmsSettingsStub.php';
 
+// Note: the route prefix, middleware, and enabled flag are all read when the
+// service provider boots, so they cannot be flipped from inside a test the way
+// the rest of this package's configuration can. The two cases that cover them
+// are plain PHPUnit classes rather than Pest files, because binding a second
+// base case to a folder inside the one below is not something Pest allows.
 pest()->extend( Tests\TestCase::class )
     ->in( 'Feature' );
 

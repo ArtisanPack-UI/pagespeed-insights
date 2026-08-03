@@ -19,6 +19,7 @@ use ArtisanPackUI\PageSpeedInsights\Api\PageSpeedRequest;
 use ArtisanPackUI\PageSpeedInsights\Data\LabMetrics;
 use ArtisanPackUI\PageSpeedInsights\Models\PageSpeedResult;
 use ArtisanPackUI\PageSpeedInsights\Support\CategoryTranslator;
+use ArtisanPackUI\PageSpeedInsights\Support\TrendSeries;
 use ArtisanPackUI\PageSpeedInsights\Support\UiComponentsInstalled;
 use ArtisanPackUI\PageSpeedInsights\Urls\UrlNormalizer;
 use Carbon\CarbonImmutable;
@@ -116,7 +117,7 @@ class TrendChart extends Component
      *
      * @var int
      */
-    public const MINIMUM_POINTS = 2;
+    public const MINIMUM_POINTS = TrendSeries::MINIMUM_POINTS;
 
     /**
      * The most runs one chart will plot.
@@ -133,7 +134,7 @@ class TrendChart extends Component
      *
      * @var int
      */
-    public const MAX_RESULTS = 500;
+    public const MAX_RESULTS = TrendSeries::MAX_RESULTS;
 
     /**
      * The columns a plotted point is built from.
@@ -146,20 +147,7 @@ class TrendChart extends Component
      *
      * @var array<int, string>
      */
-    public const PLOTTED_COLUMNS = [
-        'id',
-        'url',
-        'strategy',
-        'status',
-        'performance_score',
-        'accessibility_score',
-        'best_practices_score',
-        'seo_score',
-        'lab_metrics',
-        'warnings',
-        'fetched_at',
-        'created_at',
-    ];
+    public const PLOTTED_COLUMNS = TrendSeries::PLOTTED_COLUMNS;
 
     /**
      * The ranges the selector offers, in days.
@@ -171,7 +159,7 @@ class TrendChart extends Component
      *
      * @var array<int, int>
      */
-    public const RANGES = [ 7, 30, 90, 365 ];
+    public const RANGES = TrendSeries::RANGES;
 
     /**
      * The lab metrics that can be plotted, on top of the four categories.
@@ -189,10 +177,7 @@ class TrendChart extends Component
      *
      * @var array<int, string>
      */
-    public const STRATEGIES = [
-        PageSpeedRequest::STRATEGY_MOBILE,
-        PageSpeedRequest::STRATEGY_DESKTOP,
-    ];
+    public const STRATEGIES = TrendSeries::STRATEGIES;
 
     /**
      * The URL this trend describes.
