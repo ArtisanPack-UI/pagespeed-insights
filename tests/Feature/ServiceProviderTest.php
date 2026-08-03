@@ -7,6 +7,7 @@ use ArtisanPackUI\PageSpeedInsights\Livewire\CoreWebVitalsCard;
 use ArtisanPackUI\PageSpeedInsights\Livewire\OpportunitiesTable;
 use ArtisanPackUI\PageSpeedInsights\Livewire\ScoreCard;
 use ArtisanPackUI\PageSpeedInsights\Livewire\TrendChart;
+use ArtisanPackUI\PageSpeedInsights\Livewire\UrlManager;
 use ArtisanPackUI\PageSpeedInsights\PageSpeedInsights;
 use ArtisanPackUI\PageSpeedInsights\PageSpeedInsightsServiceProvider;
 use ArtisanPackUI\PageSpeedInsights\Support\LivewireInstalled;
@@ -60,6 +61,7 @@ it( 'registers the package view namespace', function (): void {
     expect( view()->exists( 'pagespeed-insights::livewire.core-web-vitals-card' ) )->toBeTrue();
     expect( view()->exists( 'pagespeed-insights::livewire.opportunities-table' ) )->toBeTrue();
     expect( view()->exists( 'pagespeed-insights::livewire.trend-chart' ) )->toBeTrue();
+    expect( view()->exists( 'pagespeed-insights::livewire.url-manager' ) )->toBeTrue();
 } );
 
 it( 'registers the Livewire components under their documented aliases', function ( string $alias, string $class ): void {
@@ -69,6 +71,7 @@ it( 'registers the Livewire components under their documented aliases', function
     'core web vitals' => [ 'pagespeed-core-web-vitals', CoreWebVitalsCard::class ],
     'opportunities'   => [ 'pagespeed-opportunities', OpportunitiesTable::class ],
     'trend chart'     => [ 'pagespeed-trend-chart', TrendChart::class ],
+    'url manager'     => [ 'pagespeed-url-manager', UrlManager::class ],
 ] );
 
 it( 'skips Livewire registration entirely when Livewire is not installed', function (): void {
