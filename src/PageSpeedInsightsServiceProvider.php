@@ -33,8 +33,11 @@ use ArtisanPackUI\PageSpeedInsights\Console\Commands\PruneCommand;
 use ArtisanPackUI\PageSpeedInsights\Console\Commands\TestCommand;
 use ArtisanPackUI\PageSpeedInsights\Contracts\ApiKeyRepository;
 use ArtisanPackUI\PageSpeedInsights\Jobs\Middleware\RateLimitPageSpeedRequests;
+use ArtisanPackUI\PageSpeedInsights\Livewire\CoreWebVitalsCard;
+use ArtisanPackUI\PageSpeedInsights\Livewire\ScoreCard;
 use ArtisanPackUI\PageSpeedInsights\Scheduling\TestScheduler;
 use ArtisanPackUI\PageSpeedInsights\Support\GoogleConnectionResolver;
+use ArtisanPackUI\PageSpeedInsights\Support\LivewireInstalled;
 use ArtisanPackUI\PageSpeedInsights\Support\RetentionPolicy;
 use ArtisanPackUI\PageSpeedInsights\Urls\SitemapDiscoverer;
 use ArtisanPackUI\PageSpeedInsights\Urls\UrlRegistry;
@@ -45,6 +48,7 @@ use Illuminate\Contracts\Foundation\Application;
 use Illuminate\Contracts\Notifications\Dispatcher as NotificationDispatcher;
 use Illuminate\Http\Client\Factory as HttpFactory;
 use Illuminate\Support\ServiceProvider;
+use Livewire\Livewire;
 use Throwable;
 
 /**
@@ -96,9 +100,15 @@ class PageSpeedInsightsServiceProvider extends ServiceProvider
             __DIR__ . '/../database/migrations' => database_path( 'migrations' ),
         ], 'pagespeed-insights-migrations' );
 
+        $this->publishes( [
+            __DIR__ . '/../resources/views' => resource_path( 'views/vendor/pagespeed-insights' ),
+        ], 'pagespeed-insights-views' );
+
         $this->loadMigrationsFrom( __DIR__ . '/../database/migrations' );
+        $this->loadViewsFrom( __DIR__ . '/../resources/views', 'pagespeed-insights' );
 
         $this->registerCmsSettings();
+        $this->registerLivewireComponents();
 
         if ( $this->app->runningInConsole() ) {
             $this->commands( [
@@ -111,8 +121,31 @@ class PageSpeedInsightsServiceProvider extends ServiceProvider
             $this->scheduleTasks();
         }
 
-        // Routes, views, Livewire components, and the CMS-framework
-        // AdminWidget bridge are registered here as each is built.
+        // Routes and the CMS-framework AdminWidget bridge are registered
+        // here as each is built.
+    }
+
+    /**
+     * Register the package's Livewire components, when Livewire is installed.
+     *
+     * Livewire is a suggested dependency rather than a required one — the
+     * commands, the queued job, and the alerting are all useful on an
+     * application with no front end — so an install without it must boot
+     * exactly as it did before these components existed rather than fail on
+     * a missing base class.
+     *
+     * @since 1.0.0
+     *
+     * @return void
+     */
+    protected function registerLivewireComponents(): void
+    {
+        if ( ! LivewireInstalled::check() ) {
+            return;
+        }
+
+        Livewire::component( 'pagespeed-score-card', ScoreCard::class );
+        Livewire::component( 'pagespeed-core-web-vitals', CoreWebVitalsCard::class );
     }
 
     /**
