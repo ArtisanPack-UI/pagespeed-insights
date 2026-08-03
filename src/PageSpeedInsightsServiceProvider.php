@@ -37,6 +37,7 @@ use ArtisanPackUI\PageSpeedInsights\Livewire\CoreWebVitalsCard;
 use ArtisanPackUI\PageSpeedInsights\Livewire\OpportunitiesTable;
 use ArtisanPackUI\PageSpeedInsights\Livewire\ScoreCard;
 use ArtisanPackUI\PageSpeedInsights\Livewire\TrendChart;
+use ArtisanPackUI\PageSpeedInsights\Livewire\UrlManager;
 use ArtisanPackUI\PageSpeedInsights\Scheduling\TestScheduler;
 use ArtisanPackUI\PageSpeedInsights\Support\GoogleConnectionResolver;
 use ArtisanPackUI\PageSpeedInsights\Support\LivewireInstalled;
@@ -150,6 +151,7 @@ class PageSpeedInsightsServiceProvider extends ServiceProvider
         Livewire::component( 'pagespeed-core-web-vitals', CoreWebVitalsCard::class );
         Livewire::component( 'pagespeed-opportunities', OpportunitiesTable::class );
         Livewire::component( 'pagespeed-trend-chart', TrendChart::class );
+        Livewire::component( 'pagespeed-url-manager', UrlManager::class );
     }
 
     /**
