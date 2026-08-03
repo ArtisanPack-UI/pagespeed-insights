@@ -52,7 +52,8 @@
     "laravel/pint": "^1.26",
     "livewire/livewire": "^3.6",
     "orchestra/testbench": "^10.2|^11.0",
-    "friendsofphp/php-cs-fixer": "^3.75"
+    "friendsofphp/php-cs-fixer": "^3.75",
+    "artisanpack-ui/livewire-ui-components": "^2.1"
   },
   "suggest": {
     "livewire/livewire": "Required for the Blade / Livewire score, Core Web Vitals, opportunity, and trend components and the CMS-framework AdminWidget bridge.",
