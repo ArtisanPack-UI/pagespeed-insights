@@ -56,6 +56,16 @@ it( 'publishes the Blade views under their own tag', function (): void {
         ->not->toBeEmpty();
 } );
 
+it( 'publishes the React and Vue sources under their own tag', function (): void {
+    $paths = ServiceProvider::pathsToPublish( PageSpeedInsightsServiceProvider::class, 'pagespeed-insights-js' );
+
+    expect( $paths )->not->toBeEmpty();
+    // Published as sources rather than as a build: the components take their
+    // styling from the host application's Tailwind and daisyUI theme, so they
+    // have to reach its pipeline before it compiles.
+    expect( array_key_first( $paths ) )->toEndWith( 'resources/js' );
+} );
+
 it( 'registers the package view namespace', function (): void {
     expect( view()->exists( 'pagespeed-insights::livewire.score-card' ) )->toBeTrue();
     expect( view()->exists( 'pagespeed-insights::livewire.core-web-vitals-card' ) )->toBeTrue();

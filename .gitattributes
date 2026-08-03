@@ -10,3 +10,7 @@
 /phpunit.xml   export-ignore
 /.gitlab-ci.yml export-ignore
 /docs export-ignore
+/vitest.config.ts export-ignore
+/tsconfig.json export-ignore
+/package.json export-ignore
+/package-lock.json export-ignore
