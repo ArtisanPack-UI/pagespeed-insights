@@ -72,6 +72,15 @@ class AlertDispatcher
     public const DIGEST_PENDING_KEY = 'pagespeed-insights:alerts:regressions:pending';
 
     /**
+     * The cache key counting consecutive failed digest deliveries.
+     *
+     * @since 1.0.0
+     *
+     * @var string
+     */
+    public const DIGEST_RETRIES_KEY = 'pagespeed-insights:alerts:regressions:retries';
+
+    /**
      * Seconds to gather regressions for when config carries no usable value.
      *
      * @since 1.0.0
@@ -88,6 +97,16 @@ class AlertDispatcher
      * @var int
      */
     public const MAX_BUFFERED = 500;
+
+    /**
+     * How many times a digest window is handed back after a failed delivery
+     * before it is given up on.
+     *
+     * @since 1.0.0
+     *
+     * @var int
+     */
+    public const MAX_DELIVERY_RETRIES = 3;
 
     /**
      * Build the dispatcher.
@@ -111,7 +130,10 @@ class AlertDispatcher
      * Take regressions that have just been detected.
      *
      * Buffers them when digesting is on, sends them straight out when it is
-     * off.
+     * off. A straight-out send that fails is logged and dropped rather than
+     * retried: there is no window holding it back from being said again, and
+     * the only machinery that could carry it to a later attempt is the digest
+     * this caller has switched off.
      *
      * @since 1.0.0
      *
@@ -137,9 +159,18 @@ class AlertDispatcher
     /**
      * Send everything the buffer has gathered, and empty it.
      *
+     * A window whose delivery threw is put back rather than dropped, and
+     * another flush is scheduled for it: the buffer exists to stop one deploy
+     * arriving as thirty emails, not to swallow the one email it was
+     * collapsed into. Putting it back is bounded by
+     * {@see self::MAX_DELIVERY_RETRIES}, because a mailer that is broken
+     * rather than briefly down would otherwise carry the same window forward
+     * for as long as the queue runs.
+     *
      * @since 1.0.0
      *
-     * @return int How many regressions were sent.
+     * @return int How many regressions left the buffer; 0 when it was empty
+     *             or was put back for another attempt.
      */
     public function flush(): int
     {
@@ -165,7 +196,13 @@ class AlertDispatcher
             array_values( array_filter( $stored, 'is_array' ) ),
         );
 
-        $this->send( $regressions );
+        $delivery = $this->send( $regressions );
+
+        if ( AlertDelivery::Failed === $delivery && $this->retry( $store, $regressions ) ) {
+            return 0;
+        }
+
+        $store->forget( self::DIGEST_RETRIES_KEY );
 
         return count( $regressions );
     }
@@ -186,9 +223,10 @@ class AlertDispatcher
      *
      * @param  Notification  $notification  The notification to deliver.
      *
-     * @return bool True when it went to at least one recipient.
+     * @return AlertDelivery What became of it, so a caller holding a
+     *                       suppression marker knows whether to release it.
      */
-    public function notify( Notification $notification ): bool
+    public function notify( Notification $notification ): AlertDelivery
     {
         $recipients = $this->recipients();
 
@@ -198,7 +236,7 @@ class AlertDispatcher
                 [ 'notification' => $notification::class ],
             );
 
-            return false;
+            return AlertDelivery::NoRecipients;
         }
 
         try {
@@ -209,10 +247,10 @@ class AlertDispatcher
                 [ 'notification' => $notification::class, 'error' => $exception->getMessage() ],
             );
 
-            return false;
+            return AlertDelivery::Failed;
         }
 
-        return true;
+        return AlertDelivery::Delivered;
     }
 
     /**
@@ -264,11 +302,51 @@ class AlertDispatcher
      *
      * @param  array<int, Regression>  $regressions  What regressed.
      *
-     * @return void
+     * @return AlertDelivery What became of it.
      */
-    protected function send( array $regressions ): void
+    protected function send( array $regressions ): AlertDelivery
     {
-        $this->notify( new ScoreRegressionNotification( $regressions, $this->channels() ) );
+        return $this->notify( new ScoreRegressionNotification( $regressions, $this->channels() ) );
+    }
+
+    /**
+     * Put a window that could not be delivered back for another attempt.
+     *
+     * @since 1.0.0
+     *
+     * @param  CacheRepository  $store  The cache store holding the buffer.
+     * @param  array<int, Regression>  $regressions  What could not be sent.
+     *
+     * @return bool True when it was put back, false when it was given up on.
+     */
+    protected function retry( CacheRepository $store, array $regressions ): bool
+    {
+        if ( ! $this->digesting() ) {
+            // Retrying means buffering and scheduling a flush, which is the
+            // digest. With no window to schedule into there is nowhere to put
+            // this, and a zero-second buffer would expire before the job that
+            // was meant to read it ran.
+            return false;
+        }
+
+        $attempts = (int) $store->get( self::DIGEST_RETRIES_KEY, 0 ) + 1;
+
+        if ( $attempts > self::MAX_DELIVERY_RETRIES ) {
+            $this->logger->error(
+                'PageSpeed regressions could not be delivered after repeated attempts, so the digest window was dropped. The regressions themselves are in the log above, one line per detection.',
+                [ 'attempts' => self::MAX_DELIVERY_RETRIES, 'regressions' => count( $regressions ) ],
+            );
+
+            $store->forget( self::DIGEST_RETRIES_KEY );
+
+            return false;
+        }
+
+        $store->put( self::DIGEST_RETRIES_KEY, $attempts, $this->digestWait() * 2 );
+
+        $this->buffer( $regressions );
+
+        return true;
     }
 
     /**

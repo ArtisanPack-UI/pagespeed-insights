@@ -251,6 +251,38 @@ it( 'does not alert about the same URL twice inside the repeat window', function
     Notification::assertSentTimes( StaleUrlNotification::class, 1 );
 } );
 
+it( 'alerts again on the next pass when the notification could not be delivered', function (): void {
+    psiFailingNotifications();
+
+    $url = psiMonitoredUrl( [ 'test_frequency' => 'daily' ] );
+    psiRunFor( $url, 60 * 24 * 5 );
+
+    expect( app( StalenessDetector::class )->handle() )->toHaveCount( 1 );
+
+    // The mailer comes back before the repeat window is anywhere near over.
+    Notification::fake();
+    psiWorkingNotifications();
+
+    expect( app( StalenessDetector::class )->handle() )->toHaveCount( 1 );
+
+    Notification::assertSentTimes( StaleUrlNotification::class, 1 );
+} );
+
+it( 'stays quiet on the next pass when nobody is configured to receive the alert', function (): void {
+    Notification::fake();
+
+    config()->set( 'pagespeed-insights.alerts.mail_to', [] );
+    config()->set( 'pagespeed-insights.alerts.notifiable', null );
+
+    $url = psiMonitoredUrl( [ 'test_frequency' => 'daily' ] );
+    psiRunFor( $url, 60 * 24 * 5 );
+
+    expect( app( StalenessDetector::class )->handle() )->toHaveCount( 1 )
+        ->and( app( StalenessDetector::class )->handle() )->toBe( [] );
+
+    Notification::assertNothingSent();
+} );
+
 it( 'alerts on every pass when the repeat window is turned off', function (): void {
     Notification::fake();
 
@@ -316,6 +348,26 @@ it( 'fires the went-stale action with the URL and the diagnosis', function (): v
         ->and( $seen[ 0 ][ 'diagnosis' ][ 'frequency' ] )->toBe( 'daily' )
         ->and( $seen[ 0 ][ 'diagnosis' ][ 'cause' ] )->toBe( StaleUrl::CAUSE_NOT_RUNNING )
         ->and( $seen[ 0 ][ 'diagnosis' ][ 'missed_cycles' ] )->toBe( 2 );
+
+    removeAllActions( StalenessDetector::ACTION_URL_WENT_STALE );
+} );
+
+it( 'fires the action again for a URL whose alert could not be delivered', function (): void {
+    psiFailingNotifications();
+
+    $fired = 0;
+
+    addAction( StalenessDetector::ACTION_URL_WENT_STALE, function () use ( &$fired ): void {
+        ++$fired;
+    } );
+
+    $url = psiMonitoredUrl( [ 'test_frequency' => 'daily' ] );
+    psiRunFor( $url, 60 * 24 * 5 );
+
+    app( StalenessDetector::class )->handle();
+    app( StalenessDetector::class )->handle();
+
+    expect( $fired )->toBe( 2 );
 
     removeAllActions( StalenessDetector::ACTION_URL_WENT_STALE );
 } );

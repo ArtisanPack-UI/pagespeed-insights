@@ -361,6 +361,8 @@ When there is nothing to compare against, that fact is logged at debug level rat
 
 One monitoring cycle produces one result per URL per form factor, each inspected in its own queued job. Alerting on each one directly turns a single bad deploy into thirty near-identical emails, which is how an alert becomes something people filter into a folder — so regressions are buffered for `alerts.digest.wait` seconds and sent as one notification. Exactly one flush job is queued per window.
 
+**A window whose delivery throws is put back rather than dropped**, and another flush is scheduled for it, up to three attempts before the window is given up on and logged. The buffer exists to stop one deploy arriving as thirty emails, not to swallow the one email it was collapsed into. A window nobody is configured to receive is *not* retried — that is a permanent state and the documented way to run this package on hooks and logs alone.
+
 Note that the digest is a *delayed* job, and the `sync` queue driver ignores delays. On a sync queue every regression sends immediately; set `alerts.digest.enabled` to `false` there and mean it, or run a real queue.
 
 ### Pages that stop reporting
@@ -379,6 +381,8 @@ A URL is stale when it has no **completed** run inside its own cadence times `al
 **The alert names the likely cause**, because "3 URLs stopped reporting" sends somebody hunting and "3 URLs stopped reporting; last error: no PageSpeed Insights API key configured" is fixed in a minute. The data to tell them apart is already on hand: a missing key or switched-off scheduling explains the whole list at once and is named first; failed rows written since the last good run are quoted with their `error_message`; and no rows at all — not even a failure — means the runs are not reaching a worker, which points at the scheduler or the queue rather than at Google.
 
 Everything found in one pass goes out as a single notification, and a URL that stays broken alerts again only after `alerts.staleness.repeat_after` seconds (a day), so a weekend of downtime is one email rather than 48. `--dry-run` neither sends nor consumes that window, so asking the question by hand does not silence the next real alert.
+
+**A notification that could not be delivered does not consume the window either.** The re-alert window is a limit on repetition, not a licence to drop the first one — a URL that stopped reporting into a five-minute SMTP outage is alerted about again on the next pass rather than a day later. Delivery failing is not the same as nobody being configured to receive it: with no recipients at all the window *is* consumed, since re-firing `ap.pageSpeed.urlWentStale` on every pass for as long as a URL stays broken is the spam this window exists to prevent, arriving from the other direction.
 
 ### Configuration
 
