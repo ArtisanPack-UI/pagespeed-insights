@@ -335,6 +335,12 @@ addAction( 'ap.pageSpeed.resultStored', function ( PageSpeedResult $row, ?TestRe
 addAction( 'ap.pageSpeed.scoreRegressed', function ( PageSpeedResult $row, array $regressions ): void {
     // ...
 } );
+
+// After a monitored URL is found to have stopped reporting. $diagnosis carries
+// the cadence, the last completed run, and the likely cause.
+addAction( 'ap.pageSpeed.urlWentStale', function ( ?PageSpeedUrl $url, array $diagnosis ): void {
+    // ...
+} );
 ```
 
 ## Alerts
@@ -357,6 +363,23 @@ One monitoring cycle produces one result per URL per form factor, each inspected
 
 Note that the digest is a *delayed* job, and the `sync` queue driver ignores delays. On a sync queue every regression sends immediately; set `alerts.digest.enabled` to `false` there and mean it, or run a real queue.
 
+### Pages that stop reporting
+
+Regression detection only ever runs when a new result exists, so it cannot see the failure where results stop arriving at all: a revoked or exhausted API key, a monitored page that started returning 404, a queue worker that died, `scheduling.enabled` switched off in an environment nobody checks. Nothing new is written, nothing is compared, nothing is sent — and the trend chart flatlines at the last good score and looks perfectly healthy. That is performance monitoring silently ceasing to monitor, which is the exact thing this package exists to prevent, arriving through the back door.
+
+So a second detector runs on the schedule rather than after a result is stored, and reports the monitored URLs that have gone quiet:
+
+```bash
+php artisan pagespeed:check-staleness             # check, and alert about what it finds
+php artisan pagespeed:check-staleness --dry-run   # list what is stale without alerting
+```
+
+A URL is stale when it has no **completed** run inside its own cadence times `alerts.staleness.missed_cycles` (2). Tolerance is counted in missed cycles rather than hours so it scales with each URL: an hourly page is late after two hours and a monthly one after two months, from the same setting, and a daily URL is not reported for being an hour behind. Paused URLs are ignored. A URL that has never completed a run is measured from the day it was added, so a page registered this morning is new rather than stale — while one added last month and never successfully tested, which is the broken-key case, does report.
+
+**The alert names the likely cause**, because "3 URLs stopped reporting" sends somebody hunting and "3 URLs stopped reporting; last error: no PageSpeed Insights API key configured" is fixed in a minute. The data to tell them apart is already on hand: a missing key or switched-off scheduling explains the whole list at once and is named first; failed rows written since the last good run are quoted with their `error_message`; and no rows at all — not even a failure — means the runs are not reaching a worker, which points at the scheduler or the queue rather than at Google.
+
+Everything found in one pass goes out as a single notification, and a URL that stays broken alerts again only after `alerts.staleness.repeat_after` seconds (a day), so a weekend of downtime is one email rather than 48. `--dry-run` neither sends nor consumes that window, so asking the question by hand does not silence the next real alert.
+
 ### Configuration
 
 | Key | Env | Default | Meaning |
@@ -371,6 +394,10 @@ Note that the digest is a *delayed* job, and the `sync` queue driver ignores del
 | `alerts.digest.enabled` | — | true | Whether regressions are batched. |
 | `alerts.digest.wait` | `PAGESPEED_ALERT_DIGEST_WAIT` | 300 | Seconds to gather regressions for. |
 | `alerts.digest.store` | `PAGESPEED_ALERT_DIGEST_STORE` | null | Cache store holding the buffer. Null means the default. |
+| `alerts.staleness.enabled` | `PAGESPEED_ALERT_STALENESS_ENABLED` | true | Whether URLs that stop reporting are alerted about. `alerts.enabled` off turns this off too. |
+| `alerts.staleness.missed_cycles` | `PAGESPEED_ALERT_STALENESS_MISSED_CYCLES` | 2 | Expected runs a URL may miss before it is reported. Below 1 falls back to the default. |
+| `alerts.staleness.repeat_after` | `PAGESPEED_ALERT_STALENESS_REPEAT_AFTER` | 86400 | Seconds before a still-stale URL alerts again. 0 alerts on every pass. |
+| `alerts.staleness.store` | `PAGESPEED_ALERT_STALENESS_STORE` | null | Cache store holding the re-alert markers. Null falls back to the digest store, then the default. |
 
 Thresholds ship unset because a floor is a per-site judgement: guessed too high it alerts on everything, too low on nothing. With nobody in `alerts.mail_to` and no `alerts.notifiable`, detection still runs, still fires `ap.pageSpeed.scoreRegressed`, and still logs — it just has nowhere to send an email, which it says at debug level rather than silently.
 

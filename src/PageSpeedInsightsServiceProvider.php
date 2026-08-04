@@ -23,6 +23,7 @@ namespace ArtisanPackUI\PageSpeedInsights;
 use ArtisanPackUI\Google\Tokens\TokenManager;
 use ArtisanPackUI\PageSpeedInsights\Alerts\AlertDispatcher;
 use ArtisanPackUI\PageSpeedInsights\Alerts\RegressionDetector;
+use ArtisanPackUI\PageSpeedInsights\Alerts\StalenessDetector;
 use ArtisanPackUI\PageSpeedInsights\Api\PageSpeedClient;
 use ArtisanPackUI\PageSpeedInsights\Bridges\CmsFramework\AdminWidgets\CoreWebVitalsWidget;
 use ArtisanPackUI\PageSpeedInsights\Bridges\CmsFramework\AdminWidgets\ScoreCardWidget;
@@ -30,6 +31,7 @@ use ArtisanPackUI\PageSpeedInsights\Bridges\CmsFramework\AdminWidgets\TrendChart
 use ArtisanPackUI\PageSpeedInsights\Configuration\CmsSettingsDriver;
 use ArtisanPackUI\PageSpeedInsights\Configuration\ConfigDriver;
 use ArtisanPackUI\PageSpeedInsights\Configuration\DatabaseDriver;
+use ArtisanPackUI\PageSpeedInsights\Console\Commands\CheckStalenessCommand;
 use ArtisanPackUI\PageSpeedInsights\Console\Commands\DiscoverSitemapCommand;
 use ArtisanPackUI\PageSpeedInsights\Console\Commands\MonitorCommand;
 use ArtisanPackUI\PageSpeedInsights\Console\Commands\PruneCommand;
@@ -130,6 +132,7 @@ class PageSpeedInsightsServiceProvider extends ServiceProvider
 
         if ( $this->app->runningInConsole() ) {
             $this->commands( [
+                CheckStalenessCommand::class,
                 DiscoverSitemapCommand::class,
                 MonitorCommand::class,
                 PruneCommand::class,
@@ -308,6 +311,14 @@ class PageSpeedInsightsServiceProvider extends ServiceProvider
             $app[ 'config' ],
             $app[ 'log' ],
         ) );
+
+        $this->app->bind( StalenessDetector::class, fn ( Application $app ): StalenessDetector => new StalenessDetector(
+            $app->make( AlertDispatcher::class ),
+            $app->make( ApiKeyRepository::class ),
+            $app->make( CacheFactory::class ),
+            $app[ 'config' ],
+            $app[ 'log' ],
+        ) );
     }
 
     /**
@@ -353,6 +364,17 @@ class PageSpeedInsightsServiceProvider extends ServiceProvider
             // long enough that the next day's could start on top of it.
             $schedule->command( PruneCommand::class )
                 ->daily()
+                ->withoutOverlapping();
+
+            // Staleness is checked on the same hourly tick as monitoring, for
+            // the same reason: `hourly` is a supported per-URL cadence, so
+            // looking any less often would leave an hourly page unable to be
+            // reported as late. Alerting about the same URL over and over is
+            // held off by `alerts.staleness.repeat_after` rather than by
+            // checking rarely — how often the package *looks* and how often it
+            // *tells you* are separate questions.
+            $schedule->command( CheckStalenessCommand::class )
+                ->hourly()
                 ->withoutOverlapping();
         } );
     }
