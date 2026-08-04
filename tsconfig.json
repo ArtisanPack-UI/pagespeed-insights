@@ -13,5 +13,11 @@
     "forceConsistentCasingInFileNames": true,
     "types": ["vitest/globals", "@testing-library/jest-dom"]
   },
-  "include": ["resources/js/**/*.ts", "resources/js/**/*.tsx", "tests/js/**/*.ts", "tests/js/**/*.tsx"]
+  "include": [
+    "resources/js/**/*.ts",
+    "resources/js/**/*.tsx",
+    "resources/js/**/*.vue",
+    "tests/js/**/*.ts",
+    "tests/js/**/*.tsx"
+  ]
 }

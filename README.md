@@ -484,7 +484,45 @@ export function Dashboard() {
 
 The barrel re-exports the components, their prop types, and the whole shared fetch layer, so an application writing its own UI can use the typed clients without the components.
 
-### Props
+## Vue components
+
+The same five components for Vue 3, built on [`@artisanpack-ui/vue`](https://www.npmjs.com/package/@artisanpack-ui/vue), reading the same endpoints through the same shared layer, and rendering the same states. They ship as single-file components under `resources/js/vue` and publish under the same tag:
+
+```bash
+php artisan vendor:publish --tag=pagespeed-insights-js
+npm install @artisanpack-ui/vue
+```
+
+```vue
+<script setup lang="ts">
+import {
+    ScoreCard,
+    CoreWebVitalsCard,
+    OpportunitiesTable,
+    TrendChart,
+    UrlManager,
+} from '@/../js/vendor/pagespeed-insights/vue'
+</script>
+
+<template>
+    <ScoreCard url="https://example.com/pricing" />
+    <CoreWebVitalsCard url="https://example.com/pricing" />
+    <OpportunitiesTable url="https://example.com/pricing" />
+    <TrendChart url="https://example.com/pricing" />
+    <UrlManager />
+</template>
+```
+
+The props are the ones below, spelled as Vue props — `endpoint-base`, `initial-metric`, `allow-running-tests` — with one difference. React's `onResultStored` callback is a component event here, so a finished run is heard with `@result-stored="( id ) => …"` rather than by passing a function down.
+
+The composables the components are built from are exported alongside them: `usePsiResource( deps, load )` for the load lifecycle, and `usePsiResultStored( handler )` for the finished-run announcement, which unsubscribes with the surrounding effect scope. `usePsiResource` takes its dependencies as an explicit getter rather than inferring them, so a value read after an `await` inside `load` cannot silently stop being tracked.
+
+Two things differ from the React half beneath the surface, and neither changes what renders:
+
+- The components import the library from `@artisanpack-ui/vue` rather than from its `/layout`, `/display`, and `/form` subpaths, which is where the React half imports its own. The published Vue package declares those subpaths but ships no declaration file for any of them, and losing the component props' types is a worse trade than importing a barrel a bundler will tree-shake anyway.
+- The library's Vue `Stat` takes no colour prop, so a banded number is coloured with a written-out `[&_.stat-value]:text-success` class rather than with `color`.
+
+## Props
 
 | Prop | Components | Type | Default | Notes |
 |---|---|---|---|---|
@@ -497,20 +535,20 @@ The barrel re-exports the components, their prop types, and the whole shared fet
 | `allowRunningTests` | score card | `boolean` | `true` | Whether to offer the "Run test" button. |
 | `onResultStored` | score card | `(id) => void` | — | Called with the stored result id once a queued run finishes. |
 
-### States
+## States
 
-Each component renders the same states its Livewire counterpart does, and for the same reason: a React card and a Livewire card describing the same stored row must not disagree about what it says. So "the Chrome UX Report has no data for this page" and "these numbers describe the whole site" stay two different messages, an unscored category renders as an em dash rather than a zero, and an empty opportunities list is spelled three ways — never measured, measured and clean, or the run failed.
+Each component renders the same states its Livewire counterpart does, and for the same reason: a React card, a Vue card, and a Livewire card describing the same stored row must not disagree about what it says. So "the Chrome UX Report has no data for this page" and "these numbers describe the whole site" stay two different messages, an unscored category renders as an em dash rather than a zero, and an empty opportunities list is spelled three ways — never measured, measured and clean, or the run failed.
 
-Two things are drawn by hand rather than by the component library:
+Two things are drawn by hand rather than by the component library, in both sets:
 
 - **The trend line** is inline SVG. A trend carries one series per form factor, each on its own timestamps, with nulls where a completed run lost the measurement; the library's `Chart` takes a series as a plain `number[]` against shared labels, which expresses neither — and it pulls in ApexCharts, an optional peer a host application need not have installed. A gap in the history stays a gap in the line.
 - **The alerts** pair a title with a description, which the library's `Alert` takes as children.
 
-### Keeping the panels in step
+## Keeping the panels in step
 
 The score card is the only component that queues a run, so it is the only one that knows when a new row lands — and it announces it, exactly as the Livewire card dispatches `pagespeed-insights:result-stored`. The vitals card and the opportunities table refresh when the announcement names their URL *and* their form factor; the trend chart refreshes on either form factor, because it plots both. Without it a page shows fresh scores beside three panels describing the previous run, which reads as a page that has finished updating when it has not. A timed-out ticket announces nothing: no row appeared, so there is nothing for the others to re-read.
 
-The announcement is part of the shared layer rather than of the React components, so a page can join in from anywhere — including one built with neither component set, since it is also dispatched on `window`:
+The announcement is part of the shared layer rather than of either component set, so a page can join in from anywhere — including one built with neither component set, since it is also dispatched on `window`:
 
 ```ts
 import { onPsiResultStored, PSI_EVENT_RESULT_STORED } from '@/../js/vendor/pagespeed-insights/shared'
@@ -522,11 +560,11 @@ const stop = onPsiResultStored(({ url, strategy, id }) => reloadMyPanel(url, str
 window.addEventListener(PSI_EVENT_RESULT_STORED, (event) => reloadMyPanel(event.detail))
 ```
 
-React callers can use the `usePsiResultStored(handler)` hook instead, which subscribes for the life of the component and needs no memoised handler.
+React and Vue callers can use the `usePsiResultStored(handler)` hook or composable instead, which subscribes for the life of the component: the React one holds the handler in a ref so it need not be memoised, and the Vue one unsubscribes with the surrounding effect scope.
 
-### Shared fetch layer
+## Shared fetch layer
 
-`resources/js/shared` is framework-free TypeScript: one typed client per endpoint (`scores.ts`, `core-web-vitals.ts`, `opportunities.ts`, `trends.ts`, `urls.ts`, `runs.ts`), the request plumbing they share (`client.ts`), and the names and colours the endpoints deliberately do not send (`labels.ts`). The Vue components will consume the same modules, so both frameworks talk to one server payload.
+`resources/js/shared` is framework-free TypeScript: one typed client per endpoint (`scores.ts`, `core-web-vitals.ts`, `opportunities.ts`, `trends.ts`, `urls.ts`, `runs.ts`), the request plumbing they share (`client.ts`), and the names and colours the endpoints deliberately do not send (`labels.ts`). Both component sets consume the same modules, so both frameworks talk to one server payload rather than to two hand-written approximations of it.
 
 Every refusal arrives as a `PageSpeedInsightsError` carrying the endpoint's stable `code` alongside its prose `message`, so a client branches on the code rather than on the wording:
 
@@ -577,8 +615,8 @@ composer lint    # PHP-CS-Fixer (dry run) + PHPCS
 composer fix     # PHP-CS-Fixer, applied
 
 npm install
-npm test           # Vitest, against the React components
-npm run type-check # tsc --noEmit
+npm test           # Vitest, against the React and Vue components
+npm run type-check # vue-tsc --noEmit
 ```
 
 ## Contributing
