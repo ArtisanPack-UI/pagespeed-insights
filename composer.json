@@ -25,7 +25,8 @@
   },
   "autoload-dev": {
     "psr-4": {
-      "Tests\\": "tests/"
+      "Tests\\": "tests/",
+      "ArtisanPackUI\\CMSFramework\\Modules\\AdminWidgets\\": "tests/Stubs/CmsFrameworkAdminWidgets/"
     }
   },
   "authors": [

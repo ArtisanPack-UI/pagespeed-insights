@@ -24,6 +24,9 @@ use ArtisanPackUI\Google\Tokens\TokenManager;
 use ArtisanPackUI\PageSpeedInsights\Alerts\AlertDispatcher;
 use ArtisanPackUI\PageSpeedInsights\Alerts\RegressionDetector;
 use ArtisanPackUI\PageSpeedInsights\Api\PageSpeedClient;
+use ArtisanPackUI\PageSpeedInsights\Bridges\CmsFramework\AdminWidgets\CoreWebVitalsWidget;
+use ArtisanPackUI\PageSpeedInsights\Bridges\CmsFramework\AdminWidgets\ScoreCardWidget;
+use ArtisanPackUI\PageSpeedInsights\Bridges\CmsFramework\AdminWidgets\TrendChartWidget;
 use ArtisanPackUI\PageSpeedInsights\Configuration\CmsSettingsDriver;
 use ArtisanPackUI\PageSpeedInsights\Configuration\ConfigDriver;
 use ArtisanPackUI\PageSpeedInsights\Configuration\DatabaseDriver;
@@ -39,6 +42,7 @@ use ArtisanPackUI\PageSpeedInsights\Livewire\ScoreCard;
 use ArtisanPackUI\PageSpeedInsights\Livewire\TrendChart;
 use ArtisanPackUI\PageSpeedInsights\Livewire\UrlManager;
 use ArtisanPackUI\PageSpeedInsights\Scheduling\TestScheduler;
+use ArtisanPackUI\PageSpeedInsights\Support\CmsFrameworkInstalled;
 use ArtisanPackUI\PageSpeedInsights\Support\GoogleConnectionResolver;
 use ArtisanPackUI\PageSpeedInsights\Support\LivewireInstalled;
 use ArtisanPackUI\PageSpeedInsights\Support\RetentionPolicy;
@@ -121,6 +125,7 @@ class PageSpeedInsightsServiceProvider extends ServiceProvider
 
         $this->registerCmsSettings();
         $this->registerLivewireComponents();
+        $this->registerCmsFrameworkWidgets();
         $this->registerRoutes();
 
         if ( $this->app->runningInConsole() ) {
@@ -133,9 +138,27 @@ class PageSpeedInsightsServiceProvider extends ServiceProvider
 
             $this->scheduleTasks();
         }
+    }
 
-        // The CMS-framework AdminWidget bridge is registered here as it is
-        // built.
+    /**
+     * The CMS-framework admin widget types this package contributes, as
+     * `type => widget class` pairs.
+     *
+     * Exposed as a static method so an application can see what the bridge
+     * registers — and so tests can assert the list — without booting the
+     * provider or having the CMS framework installed to ask its manager.
+     *
+     * @since 1.0.0
+     *
+     * @return array<string, class-string> The widget types, keyed by their registration type.
+     */
+    public static function cmsFrameworkWidgetTypeMap(): array
+    {
+        return [
+            'pagespeed-insights.score-card'      => ScoreCardWidget::class,
+            'pagespeed-insights.core-web-vitals' => CoreWebVitalsWidget::class,
+            'pagespeed-insights.trend-chart'     => TrendChartWidget::class,
+        ];
     }
 
     /**
@@ -193,6 +216,43 @@ class PageSpeedInsightsServiceProvider extends ServiceProvider
         Livewire::component( 'pagespeed-opportunities', OpportunitiesTable::class );
         Livewire::component( 'pagespeed-trend-chart', TrendChart::class );
         Livewire::component( 'pagespeed-url-manager', UrlManager::class );
+    }
+
+    /**
+     * Register the score, vitals, and trend components as CMS-framework
+     * admin dashboard widgets.
+     *
+     * An optional bridge on top of an optional bridge: the wrapper classes
+     * name CMS-framework types in their `implements` clause and extend
+     * Livewire components, so neither may be referenced until both packages
+     * are present. Without them the package boots exactly as it does today
+     * and stays CMS-agnostic.
+     *
+     * The widget aliases mirror the base component registration so a
+     * dashboard can render a widget by class name or by its
+     * `pagespeed-*-widget` alias.
+     *
+     * @since 1.0.0
+     *
+     * @return void
+     */
+    protected function registerCmsFrameworkWidgets(): void
+    {
+        if ( ! CmsFrameworkInstalled::check() || ! LivewireInstalled::check() ) {
+            return;
+        }
+
+        $manager = $this->app->make(
+            \ArtisanPackUI\CMSFramework\Modules\AdminWidgets\Services\AdminWidgetManager::class,
+        );
+
+        foreach ( self::cmsFrameworkWidgetTypeMap() as $type => $class ) {
+            $manager->register( $type, $class );
+        }
+
+        Livewire::component( 'pagespeed-score-card-widget', ScoreCardWidget::class );
+        Livewire::component( 'pagespeed-core-web-vitals-widget', CoreWebVitalsWidget::class );
+        Livewire::component( 'pagespeed-trend-chart-widget', TrendChartWidget::class );
     }
 
     /**
