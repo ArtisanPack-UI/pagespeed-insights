@@ -50,6 +50,33 @@ jobs:
         continue-on-error: true
         run: ./vendor/bin/phpcs
 
+  js:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    name: JavaScript
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Install dependencies
+        # Reads the repo's .npmrc, which pins legacy-peer-deps=true so that
+        # @artisanpack-ui/react and @artisanpack-ui/vue can be installed side
+        # by side over their conflicting optional apexcharts peer. The lockfile
+        # still pins exact versions with integrity hashes.
+        run: npm ci
+
+      - name: Run JavaScript tests
+        run: npm test
+
+      - name: Run type check
+        run: npm run type-check
+
   test:
     runs-on: ubuntu-latest
     timeout-minutes: 15
