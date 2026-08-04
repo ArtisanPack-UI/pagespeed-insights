@@ -6,9 +6,11 @@ namespace Tests;
 
 use ArtisanPack\Accessibility\Laravel\A11yServiceProvider;
 use ArtisanPack\LivewireUiComponents\LivewireUiComponentsServiceProvider;
+use ArtisanPackUI\CMSFramework\Modules\AdminWidgets\Services\AdminWidgetManager;
 use ArtisanPackUI\Hooks\Providers\HooksServiceProvider;
 use ArtisanPackUI\Icons\IconsServiceProvider;
 use ArtisanPackUI\PageSpeedInsights\PageSpeedInsightsServiceProvider;
+use ArtisanPackUI\PageSpeedInsights\Support\CmsFrameworkInstalled;
 use ArtisanPackUI\PageSpeedInsights\Support\LivewireInstalled;
 use ArtisanPackUI\PageSpeedInsights\Support\UiComponentsInstalled;
 use ArtisanPackUI\Security\SecurityServiceProvider;
@@ -47,6 +49,7 @@ abstract class TestCase extends BaseTestCase
 
         LivewireInstalled::reset();
         UiComponentsInstalled::reset();
+        CmsFrameworkInstalled::reset();
     }
 
     /**
@@ -61,6 +64,7 @@ abstract class TestCase extends BaseTestCase
     {
         LivewireInstalled::reset();
         UiComponentsInstalled::reset();
+        CmsFrameworkInstalled::reset();
 
         parent::tearDown();
     }
@@ -110,5 +114,12 @@ abstract class TestCase extends BaseTestCase
             'prefix'                  => '',
             'foreign_key_constraints' => true,
         ] );
+
+        // Bind the CMS framework's AdminWidgetManager as a shared instance
+        // before the providers boot, which is what the real cms-framework's
+        // own provider does. Without the binding, every `make()` would hand
+        // back a fresh manager and the widgets registered during boot would
+        // be invisible to the test that went looking for them.
+        $app->singleton( AdminWidgetManager::class );
     }
 }

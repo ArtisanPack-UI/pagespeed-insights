@@ -580,6 +580,24 @@ try {
 }
 ```
 
+## CMS-framework admin widgets
+
+With [`artisanpack-ui/cms-framework`](https://gitlab.com/jacob-martella-web-design/artisanpack-ui/artisanpack-ui-cms-framework) installed alongside Livewire, three of the components register themselves as admin dashboard widgets. Nothing to publish and nothing to wire up: they appear in the dashboard's "Add Widget" panel.
+
+| Widget type | Class | Renders |
+|---|---|---|
+| `pagespeed-insights.score-card` | `Bridges\CmsFramework\AdminWidgets\ScoreCardWidget` | The four Lighthouse category scores |
+| `pagespeed-insights.core-web-vitals` | `Bridges\CmsFramework\AdminWidgets\CoreWebVitalsWidget` | LCP, INP, and CLS from CrUX field data |
+| `pagespeed-insights.trend-chart` | `Bridges\CmsFramework\AdminWidgets\TrendChartWidget` | One measurement plotted over time |
+
+Each wrapper extends the Livewire component it exposes, so the dashboard renders it the same way it renders any other Livewire-backed widget — by class name, or by the `pagespeed-score-card-widget`, `pagespeed-core-web-vitals-widget`, and `pagespeed-trend-chart-widget` aliases. The base aliases still point at the base components.
+
+All three ask for the `view_pagespeed_insights` capability, which the CMS framework enforces — the widgets carry no gate of their own, the same stance the Livewire components take. Placing a widget is therefore the authorization decision: whoever can add or configure one chooses the address it tests, and a run spends a slice of the PageSpeed API quota and stores history for that address. The URL is `#[Locked]`, so a *viewer* of the dashboard cannot retarget a placed widget from the request payload.
+
+A widget dropped on a dashboard from the picker has no URL — there is nowhere in that panel to type one — so it describes **the application's own home page**, taken from `app.url` and canonicalized the same way every stored URL is, which is what makes the widget read the same history rows the monitored home page writes. The URL is resolved on every render rather than baked into the widget's saved options, so a site that changes domain does not leave three widgets pointing at the old one. An `app.url` that is not a testable http(s) address leaves the widget with no URL and the component's own honest empty state, rather than an invented address nobody asked about.
+
+The bridge is entirely optional in both directions. Without the CMS framework — or without Livewire — the provider registers no widgets and the package boots exactly as it does today. `PageSpeedInsightsServiceProvider::cmsFrameworkWidgetTypeMap()` returns the map above without booting anything, for an application that would rather register the widgets somewhere of its own.
+
 ## Retention
 
 Score history is the point of this package, and it is also the thing that grows without limit if nothing stops it: an hourly cadence on 200 URLs across both form factors writes about 3.5 million rows a year. So the package prunes itself.
