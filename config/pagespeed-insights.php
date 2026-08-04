@@ -306,6 +306,39 @@ return [
     | - "notifiable"     an optional class the container can resolve to
     |                    something notifiable — a team model, a Slack routing
     |                    object — notified alongside `mail_to`.
+    | - "staleness"     a score regression is only detectable when a new run
+    |                    exists. The failures that stop runs happening — a
+    |                    revoked or exhausted API key, a page that started
+    |                    returning 404, a dead queue worker, scheduling
+    |                    switched off — write no result, so nothing is
+    |                    compared and nothing is sent, while the trend chart
+    |                    flatlines at the last good score and looks healthy.
+    |                    This detector runs on the schedule instead of after a
+    |                    result is stored, and reports the URLs that have gone
+    |                    quiet along with the likely reason.
+    |                    - "enabled"       whether stale URLs are reported at
+    |                                      all. The `enabled` switch above
+    |                                      turns this off too.
+    |                    - "missed_cycles" how many expected runs a URL may
+    |                                      miss before it is reported.
+    |                                      Tolerance is counted in cycles
+    |                                      rather than hours so it scales with
+    |                                      each URL's own cadence: an hourly
+    |                                      page is late after two hours and a
+    |                                      monthly one after two months, from
+    |                                      the same setting. Values below 1
+    |                                      fall back to the default, because 0
+    |                                      would alert the instant a cadence
+    |                                      elapsed.
+    |                    - "repeat_after"  seconds before a URL that is still
+    |                                      stale is alerted about again, so a
+    |                                      URL broken over a weekend does not
+    |                                      send 48 emails. Set to 0 (or null)
+    |                                      to alert on every pass.
+    |                    - "store"         a cache store for the re-alert
+    |                                      markers; null falls back to the
+    |                                      digest store, and then to the
+    |                                      default one.
     | - "digest"         one monitoring cycle produces N URLs x 2 form factors
     |                    of results, and alerting on each one separately is
     |                    how an alert becomes something people filter into a
@@ -330,6 +363,13 @@ return [
         'channels'   => [ 'mail' ],
         'mail_to'    => env( 'PAGESPEED_ALERT_MAIL_TO' ),
         'notifiable' => null,
+
+        'staleness' => [
+            'enabled'       => env( 'PAGESPEED_ALERT_STALENESS_ENABLED', true ),
+            'missed_cycles' => env( 'PAGESPEED_ALERT_STALENESS_MISSED_CYCLES', 2 ),
+            'repeat_after'  => env( 'PAGESPEED_ALERT_STALENESS_REPEAT_AFTER', 86400 ),
+            'store'         => env( 'PAGESPEED_ALERT_STALENESS_STORE' ),
+        ],
 
         'digest' => [
             'enabled' => true,
