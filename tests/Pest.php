@@ -47,6 +47,54 @@ expect()->extend( 'toBeSemver', function () {
 |
 */
 
+if ( ! function_exists( 'psiFailingNotifications' ) ) {
+    /**
+     * Make every notification delivery throw, as a dead mailer would.
+     *
+     * `Notification::fake()` cannot express this — it records deliveries
+     * rather than attempting them — so the contract the alert dispatcher
+     * depends on is rebound instead.
+     *
+     * @return void
+     */
+    function psiFailingNotifications(): void
+    {
+        app()->bind(
+            Illuminate\Contracts\Notifications\Dispatcher::class,
+            function (): Illuminate\Contracts\Notifications\Dispatcher {
+                $message    = 'Connection could not be established with host smtp.example.com.';
+                $dispatcher = Mockery::mock( Illuminate\Contracts\Notifications\Dispatcher::class );
+
+                $dispatcher->shouldReceive( 'send' )->andThrow( new RuntimeException( $message ) );
+                $dispatcher->shouldReceive( 'sendNow' )->andThrow( new RuntimeException( $message ) );
+
+                return $dispatcher;
+            },
+        );
+    }
+}
+
+if ( ! function_exists( 'psiWorkingNotifications' ) ) {
+    /**
+     * Undo {@see psiFailingNotifications()}, as a mailer coming back would.
+     *
+     * The rebinding above wins over the framework's own alias, so
+     * `Notification::fake()` on its own does not reach the alert dispatcher
+     * once a test has made deliveries throw. Pointing the contract back at
+     * whatever the facade currently resolves to does, fake or not.
+     *
+     * @return void
+     */
+    function psiWorkingNotifications(): void
+    {
+        app()->bind(
+            Illuminate\Contracts\Notifications\Dispatcher::class,
+            static fn (): Illuminate\Contracts\Notifications\Dispatcher =>
+                Illuminate\Support\Facades\Notification::getFacadeRoot(),
+        );
+    }
+}
+
 if ( ! function_exists( 'psiSitemapUrlset' ) ) {
     /**
      * Build a sitemap `urlset` document listing the given page URLs.

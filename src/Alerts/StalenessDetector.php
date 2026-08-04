@@ -190,7 +190,21 @@ class StalenessDetector
 
         $this->fireWentStale( $alerting );
 
-        $this->dispatcher->notify( new StaleUrlNotification( $alerting, $this->dispatcher->channels() ) );
+        $delivery = $this->dispatcher->notify( new StaleUrlNotification( $alerting, $this->dispatcher->channels() ) );
+
+        if ( AlertDelivery::Failed === $delivery ) {
+            // The window is a limit on repetition, not a licence to drop the
+            // first one. A URL that stopped reporting into a five-minute SMTP
+            // outage would otherwise stay quiet for a full repeat_after — the
+            // one failure mode this detector exists to catch, lost to a race
+            // with the mail server.
+            $this->releaseAlerts( $alerting );
+
+            $this->logger->warning(
+                'A PageSpeed staleness alert could not be delivered, so these URLs will be alerted about again on the next pass.',
+                [ 'urls' => count( $alerting ) ],
+            );
+        }
 
         return $alerting;
     }
@@ -394,10 +408,53 @@ class StalenessDetector
         // there is not one already, so two passes racing each other still
         // produce one alert.
         return $this->store()->add(
-            self::SUPPRESSION_KEY . ':' . ( $url->urlId ?? md5( $url->url ) ),
+            $this->suppressionKey( $url ),
             true,
             $repeatAfter,
         );
+    }
+
+    /**
+     * Give back the markers claimed for an alert that never went out.
+     *
+     * Only ever called for a delivery that threw. A notification nobody is
+     * configured to receive is a permanent state and the documented way to run
+     * this package on hooks and logs alone, so releasing there would re-fire
+     * {@see self::ACTION_URL_WENT_STALE} on every scheduled pass for as long as
+     * the URL stayed broken — the spam this window exists to prevent, arriving
+     * from the other direction.
+     *
+     * @since 1.0.0
+     *
+     * @param  array<int, StaleUrl>  $urls  The URLs alerted about.
+     *
+     * @return void
+     */
+    protected function releaseAlerts( array $urls ): void
+    {
+        if ( $this->repeatAfter() <= 0 ) {
+            return;
+        }
+
+        $store = $this->store();
+
+        foreach ( $urls as $url ) {
+            $store->forget( $this->suppressionKey( $url ) );
+        }
+    }
+
+    /**
+     * The suppression marker key for one stale URL.
+     *
+     * @since 1.0.0
+     *
+     * @param  StaleUrl  $url  The stale URL.
+     *
+     * @return string The cache key.
+     */
+    protected function suppressionKey( StaleUrl $url ): string
+    {
+        return self::SUPPRESSION_KEY . ':' . ( $url->urlId ?? md5( $url->url ) );
     }
 
     /**

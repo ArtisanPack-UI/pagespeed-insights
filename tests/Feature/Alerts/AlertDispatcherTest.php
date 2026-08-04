@@ -100,6 +100,74 @@ it( 'empties the buffer once it has been flushed', function (): void {
     Notification::assertSentOnDemandTimes( ScoreRegressionNotification::class, 1 );
 } );
 
+it( 'puts a digest window back when it could not be delivered', function (): void {
+    psiFailingNotifications();
+
+    $dispatcher = app( AlertDispatcher::class );
+    $dispatcher->report( [ psiRegression( 'https://example.com/a' ), psiRegression( 'https://example.com/b' ) ] );
+
+    expect( $dispatcher->flush() )->toBe( 0 )
+        ->and( Cache::get( AlertDispatcher::DIGEST_KEY ) )->toHaveCount( 2 );
+
+    // One for the window that was buffered, one for the attempt it was put
+    // back for.
+    Queue::assertPushed( SendRegressionDigest::class, 2 );
+} );
+
+it( 'sends a put-back window once the mailer is working again', function (): void {
+    psiFailingNotifications();
+
+    app( AlertDispatcher::class )->report( [ psiRegression() ] );
+
+    expect( app( AlertDispatcher::class )->flush() )->toBe( 0 );
+
+    Notification::fake();
+    psiWorkingNotifications();
+
+    expect( app( AlertDispatcher::class )->flush() )->toBe( 1 )
+        ->and( Cache::has( AlertDispatcher::DIGEST_KEY ) )->toBeFalse()
+        ->and( Cache::has( AlertDispatcher::DIGEST_RETRIES_KEY ) )->toBeFalse();
+
+    Notification::assertSentOnDemandTimes( ScoreRegressionNotification::class, 1 );
+} );
+
+it( 'gives up on a window that cannot be delivered at all, and says so', function (): void {
+    Log::spy();
+
+    psiFailingNotifications();
+
+    app( AlertDispatcher::class )->report( [ psiRegression() ] );
+
+    foreach ( range( 1, AlertDispatcher::MAX_DELIVERY_RETRIES ) as $ignored ) {
+        expect( app( AlertDispatcher::class )->flush() )->toBe( 0 );
+    }
+
+    expect( app( AlertDispatcher::class )->flush() )->toBe( 1 )
+        ->and( Cache::has( AlertDispatcher::DIGEST_KEY ) )->toBeFalse()
+        ->and( Cache::has( AlertDispatcher::DIGEST_RETRIES_KEY ) )->toBeFalse();
+
+    Log::shouldHaveReceived( 'error' )
+        ->withArgs( fn ( string $message ): bool => str_contains(
+            $message,
+            'could not be delivered after repeated attempts',
+        ) )
+        ->once();
+} );
+
+it( 'drops a window nobody is configured to receive rather than retrying it', function (): void {
+    Notification::fake();
+
+    config()->set( 'pagespeed-insights.alerts.mail_to', [] );
+
+    $dispatcher = app( AlertDispatcher::class );
+    $dispatcher->report( [ psiRegression() ] );
+
+    expect( $dispatcher->flush() )->toBe( 1 )
+        ->and( Cache::has( AlertDispatcher::DIGEST_KEY ) )->toBeFalse();
+
+    Notification::assertNothingSent();
+} );
+
 it( 'queues a new flush for the next window after one has gone out', function (): void {
     Notification::fake();
 
