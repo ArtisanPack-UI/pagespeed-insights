@@ -1,8 +1,15 @@
+---
+title: PSI API Reference
+---
+
 # PageSpeed Insights API — verified reference
 
 Implementation notes for the PSI API as it actually behaves, captured while
 scaffolding this package. Everything below was checked against live sources on
 the date shown, not copied from the planning document.
+
+This is the reference the implementation is built against. For what the package
+*does* with it, start at [home](home.md).
 
 **Verified:** 2026-08-01
 **Sources:**
@@ -88,22 +95,24 @@ with `metadata.quota_limit_value: "0"` against `defaultPerDayPerProject`. A
 limit value of zero on the shared keyless project means anonymous access is not
 a usable fallback, only a documented one.
 
-> **Design consequence.** The plan's auth resolution order (§4) lists
-> "anonymous, allowed but logged with a warning" as the third tier. Treat that
-> tier as a diagnostic path that surfaces a clear "no API key configured"
-> error, not as a degraded-but-working mode. The API key is effectively
-> **required**, and the README and `MissingApiKeyException` messaging should
-> say so.
+> **Design consequence, as shipped.** The anonymous tier is a diagnostic path
+> that surfaces a clear "no API key configured" error, not a
+> degraded-but-working mode. The API key is **required**; `MissingApiKeyException`
+> says so, the client classifies a keyless 429 as a configuration error rather
+> than as quota exhaustion, and `pagespeed:test` checks for a key before
+> spending a minute on a request that could not succeed.
 
-Commonly cited figures for keyed projects — **not** confirmed by Google's
-docs, so verify against Google Cloud Console for the project in use before
-tuning `rate_limit.per_minute`:
+**No quota figure for keyed projects is documented by Google.** Numbers are
+circulated online — 25,000 queries per day, 100 queries per 100 seconds are the
+usual pair — but they appear in none of the sources above, so this package
+treats them as folklore and does not repeat them as fact anywhere in its
+documentation. Read the real limits off **APIs & Services → PageSpeed Insights
+API → Quotas** in the Google Cloud Console for the project in use before tuning
+`rate_limit.per_minute`.
 
-- 25,000 queries per day
-- 100 queries per 100 seconds
-
-The conservative default in config (`rate_limit.per_minute = 30`) sits well
-under both and does not depend on either number being right.
+The conservative default in config (`rate_limit.per_minute = 30`) exists
+precisely because there is no published number to size against; it does not
+depend on any unverified figure being right.
 
 Error shape for quota exhaustion, useful for `QuotaExceededException` mapping:
 `error.code = 429`, `error.status = "RESOURCE_EXHAUSTED"`,
