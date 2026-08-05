@@ -20,7 +20,7 @@ visible trend — and as an alert — rather than as a hunch.
 ## Requirements
 
 - PHP **8.2+**
-- Laravel **10, 11, 12, or 13**
+- Laravel **12 or 13**
 - A **PageSpeed Insights API key** — see [API key](#api-key); the package cannot run without one
 - [`artisanpack-ui/google`](https://github.com/ArtisanPack-UI/google) **^1.0** and [`artisanpack-ui/hooks`](https://github.com/ArtisanPack-UI/hooks) **^1.2** — installed automatically
 - **Livewire ^3.6** *(optional)* — required only for the Blade / Livewire components and the CMS-framework admin widget bridge
@@ -281,9 +281,22 @@ supported way to build a front end of your own.
 | `GET` | `/pagespeed/results/{id}` | Poll that ticket, or fetch any stored run |
 
 **These endpoints carry no authorization of their own beyond the configured
-middleware** — an authenticated user is an authorized one. Put your own policy
-in `routes.middleware` if "logged in" is broader than "allowed to manage
-performance monitoring" on your installation.
+middleware** — by default an authenticated user is an authorized one. If "logged
+in" is broader than "allowed to manage performance monitoring" on your
+installation — a SaaS with customer accounts, a site with public registration —
+set an ability:
+
+```php
+// config/pagespeed-insights.php  (or PAGESPEED_ROUTES_ABILITY in .env)
+'routes' => [ 'ability' => 'view_pagespeed_insights' ],
+
+// and define the gate in your own AuthServiceProvider
+Gate::define( 'view_pagespeed_insights', fn ( User $user ): bool => $user->isAdmin() );
+```
+
+It is appended to `routes.middleware` rather than replacing it, so `auth` stays
+in front of it. This is the recommended setting for any app whose accounts are
+not all staff.
 
 Full reference, states, and error codes:
 **[docs/http-endpoints.md](docs/http-endpoints.md)**.
@@ -331,6 +344,7 @@ The defaults worth knowing about up front:
 | `retention.keep_raw_days` | 30 | A raw payload is hundreds of KB of already-parsed data |
 | `store_raw_response` | false | Same reason |
 | `routes.allow_external_urls` | false | Testing a URL spends quota; an authenticated user must not aim that anywhere |
+| `routes.ability` | null | Additive, so no existing install changes behaviour by upgrading into it |
 
 ## Documentation
 

@@ -13,6 +13,7 @@ use ArtisanPackUI\PageSpeedInsights\Models\PageSpeedUrl;
 use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Queue;
+use RuntimeException;
 use Tests\Support\HttpUser;
 
 uses( RefreshDatabase::class );
@@ -84,6 +85,25 @@ it( 'refuses a URL PageSpeed cannot test', function (): void {
         ->assertJsonPath( 'error', Controller::ERROR_INVALID_URL );
 
     Queue::assertNothingPushed();
+} );
+
+it( 'does not hand the queue driver\'s own error back to the client', function (): void {
+    // Redaction takes credentials out of a connection string; the internal
+    // host, port, and path it also carries are not things a client needs in
+    // order to learn the run did not start.
+    Queue::shouldReceive( 'connection' )->andThrow(
+        new RuntimeException( 'Connection refused at redis://10.0.3.9:6379 for /var/www/app' ),
+    );
+
+    $response = $this->postJson( '/pagespeed/test', [ 'url' => 'https://example.com/page' ] )
+        ->assertStatus( 503 )
+        ->assertJsonPath( 'error', QueueTestController::ERROR_QUEUE_UNAVAILABLE );
+
+    $body = $response->getContent();
+
+    expect( $body )->not->toContain( '10.0.3.9' )
+        ->and( $body )->not->toContain( '/var/www/app' )
+        ->and( $body )->toContain( 'Check the application log' );
 } );
 
 it( 'refuses to queue a run that could not succeed without an API key', function (): void {
@@ -225,6 +245,68 @@ it( 'refuses a stored run for a URL this caller may not ask about', function ():
     $this->getJson( '/pagespeed/results/' . $result->getKey() )
         ->assertNotFound()
         ->assertJsonPath( 'error', ResultController::ERROR_NOT_FOUND );
+} );
+
+/*
+|--------------------------------------------------------------------------
+| Reads are never widened by allow_external_urls
+|--------------------------------------------------------------------------
+*/
+
+it( 'refuses a stored run for an unmonitored third party even with external URLs allowed', function (): void {
+    config()->set( 'pagespeed-insights.routes.allow_external_urls', true );
+
+    $result = PageSpeedResult::factory()->create( [ 'url' => 'https://competitor.example/pricing' ] );
+
+    $this->getJson( '/pagespeed/results/' . $result->getKey() )
+        ->assertNotFound()
+        ->assertJsonPath( 'error', ResultController::ERROR_NOT_FOUND );
+} );
+
+it( 'still serves a stored run for a monitored URL with external URLs allowed', function (): void {
+    config()->set( 'pagespeed-insights.routes.allow_external_urls', true );
+
+    PageSpeedUrl::factory()->create( [ 'url' => 'https://elsewhere.example/page' ] );
+
+    $result = PageSpeedResult::factory()->create( [ 'url' => 'https://elsewhere.example/page' ] );
+
+    $this->getJson( '/pagespeed/results/' . $result->getKey() )
+        ->assertOk()
+        ->assertJsonPath( 'id', $result->getKey() );
+} );
+
+it( 'refuses a ticket for an unmonitored third party even with external URLs allowed', function (): void {
+    config()->set( 'pagespeed-insights.routes.allow_external_urls', true );
+
+    $id = $this->postJson( '/pagespeed/test', [ 'url' => 'https://competitor.example/pricing' ] )
+        ->assertAccepted()
+        ->json( 'id' );
+
+    $this->getJson( '/pagespeed/results/' . $id )
+        ->assertNotFound()
+        ->assertJsonPath( 'error', ResultController::ERROR_NOT_FOUND );
+} );
+
+it( 'still serves a ticket for a monitored URL with external URLs allowed', function (): void {
+    config()->set( 'pagespeed-insights.routes.allow_external_urls', true );
+
+    PageSpeedUrl::factory()->create( [ 'url' => 'https://elsewhere.example/page' ] );
+
+    $id = $this->postJson( '/pagespeed/test', [ 'url' => 'https://elsewhere.example/page' ] )->json( 'id' );
+
+    $this->getJson( '/pagespeed/results/' . $id )
+        ->assertOk()
+        ->assertJsonPath( 'status', TestTicketStore::STATUS_QUEUED );
+} );
+
+it( 'still serves a ticket for an ad hoc run on this application\'s own origin', function (): void {
+    config()->set( 'pagespeed-insights.routes.allow_external_urls', true );
+
+    $id = $this->postJson( '/pagespeed/test', [ 'url' => 'https://example.com/never-added' ] )->json( 'id' );
+
+    $this->getJson( '/pagespeed/results/' . $id )
+        ->assertOk()
+        ->assertJsonPath( 'status', TestTicketStore::STATUS_QUEUED );
 } );
 
 it( 'answers 404 for an id that names nothing', function ( string $id ): void {

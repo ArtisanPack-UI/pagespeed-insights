@@ -43,12 +43,14 @@ use Throwable;
  * ### Bounds
  *
  * A sitemap is an untrusted document whose whole purpose is to name more
- * documents to fetch, so a run is bounded four ways: a cap on discovered
- * URLs, a cap on recursion depth, a cap on how many sitemap documents are
- * fetched, and a requirement that a child sitemap live on the same host as
- * the index that named it. A sitemap index that points at itself terminates
- * on the first of those to trip; one that points at a loopback service or a
- * cloud metadata endpoint never gets fetched at all.
+ * documents to fetch, so a run is bounded six ways: a cap on discovered URLs,
+ * a cap on recursion depth, a cap on how many sitemap documents are fetched, a
+ * cap on how many bytes one of them may occupy, a requirement that a child
+ * sitemap share the whole origin of the index that named it, and — unless
+ * {@see self::allowExternal()} says otherwise — a requirement that a page
+ * entry live on the sitemap's own host. A sitemap index that points at itself
+ * terminates on the first of those to trip; one that points at a loopback
+ * service or a cloud metadata endpoint never gets fetched at all.
  *
  * @package    ArtisanPack_UI
  * @subpackage PageSpeedInsights
@@ -114,6 +116,20 @@ class SitemapDiscoverer
     public const ROOT_ELEMENTS = [ 'urlset', 'sitemapindex' ];
 
     /**
+     * The most bytes one sitemap document may occupy.
+     *
+     * The sitemaps.org protocol caps an uncompressed document at 50 MB, and a
+     * document larger than this cap is not a sitemap this package can use
+     * regardless — while a compressed body that inflates past it is a way to
+     * exhaust a worker's memory from outside.
+     *
+     * @since 1.0.0
+     *
+     * @var int
+     */
+    public const MAX_BYTES = 10485760;
+
+    /**
      * libxml's `XML_PARSE_RECOVER` parse option.
      *
      * Written as its value rather than as `LIBXML_RECOVER` because PHP only
@@ -135,6 +151,21 @@ class SitemapDiscoverer
      * @var array<string, true>
      */
     protected array $visited = [];
+
+    /**
+     * Whether page entries on a host other than the sitemap's own are kept.
+     *
+     * Off by default. Whoever controls sitemap content would otherwise decide
+     * what this installation monitors, and a monitored URL is one every
+     * authenticated user may read history for and queue paid runs against.
+     * The agency case — one operator deliberately pointing the discoverer at a
+     * client's sitemap — turns it on explicitly.
+     *
+     * @since 1.0.0
+     *
+     * @var bool
+     */
+    protected bool $allowExternal = false;
 
     /**
      * Build the discoverer.
@@ -177,6 +208,22 @@ class SitemapDiscoverer
         $found = $this->walk( $target, $this->resolveLimit( $limit ), 0, true );
 
         return array_values( $found );
+    }
+
+    /**
+     * Keep or drop page entries hosted somewhere other than the sitemap.
+     *
+     * @since 1.0.0
+     *
+     * @param  bool  $allow  True to keep third-party page entries.
+     *
+     * @return self This discoverer, for chaining.
+     */
+    public function allowExternal( bool $allow = true ): self
+    {
+        $this->allowExternal = $allow;
+
+        return $this;
     }
 
     /**
@@ -223,7 +270,8 @@ class SitemapDiscoverer
         $this->visited[ $sitemap ] = true;
 
         try {
-            $xml = $this->parse( $sitemap, $this->fetch( $sitemap, $required ) );
+            $document = $this->fetch( $sitemap, $required );
+            $xml      = $this->parse( $sitemap, $document[ 'body' ] );
         } catch ( SitemapException $exception ) {
             if ( $required ) {
                 throw $exception;
@@ -238,9 +286,15 @@ class SitemapDiscoverer
         }
 
         if ( 'sitemapindex' === $xml->getName() ) {
-            return $this->walkIndex( $xml, $sitemap, $limit, $depth );
+            return $this->walkIndex( $xml, $document[ 'url' ], $limit, $depth );
         }
 
+        // Measured against the address the document was actually served from
+        // rather than the one that was asked for. The sitemap the caller named
+        // follows redirects on purpose, and apex-to-www is the ordinary case —
+        // judging its entries against the pre-redirect host would drop every
+        // one of them.
+        $host  = parse_url( $document[ 'url' ], PHP_URL_HOST );
         $found = [];
 
         foreach ( $this->locations( $xml, 'url' ) as $location ) {
@@ -254,6 +308,19 @@ class SitemapDiscoverer
                 continue;
             }
 
+            // Whoever writes the sitemap would otherwise choose what this
+            // installation monitors — and a monitored URL is one every
+            // authenticated user can read history for, plus recurring quota
+            // against the operator's own key.
+            if ( ! $this->allowExternal && parse_url( $normalized, PHP_URL_HOST ) !== $host ) {
+                $this->logger->warning(
+                    'Skipped a sitemap entry on a different host than the sitemap that listed it.',
+                    [ 'sitemap' => $document[ 'url' ], 'url' => $normalized ],
+                );
+
+                continue;
+            }
+
             $found[ $normalized ] = $normalized;
         }
 
@@ -263,16 +330,18 @@ class SitemapDiscoverer
     /**
      * Follow every sitemap named by an index document.
      *
-     * @since 1.0.0
-     *
-     * A child sitemap on a different host than its index is skipped. The
-     * sitemaps.org protocol already forbids it without a cross-submit
+     * A child sitemap on a different origin than its index is skipped —
+     * compared on scheme, host, and port, not host alone. The sitemaps.org
+     * protocol already forbids a different host without a cross-submit
      * verification this package has no way to perform, and allowing it would
      * turn any sitemap this application is pointed at into a list of
      * addresses the application will fetch on the author's behalf — a
      * request-forgery primitive reaching link-local metadata endpoints and
      * loopback services that no firewall between the app and the internet
-     * would see.
+     * would see. Scheme and port are part of that comparison because a
+     * host-only rule still reaches a service listening on another port of the
+     * same machine, and still permits a silent https-to-http downgrade.
+     *
      * @since 1.0.0
      *
      * @param  SimpleXMLElement  $xml  The parsed `sitemapindex`.
@@ -292,8 +361,9 @@ class SitemapDiscoverer
             return [];
         }
 
-        $host  = (string) parse_url( $parent, PHP_URL_HOST );
-        $found = [];
+        $parentParts = parse_url( $parent );
+        $parentParts = is_array( $parentParts ) ? $parentParts : [];
+        $found       = [];
 
         foreach ( $this->locations( $xml, 'sitemap' ) as $location ) {
             if ( count( $found ) >= $limit ) {
@@ -306,9 +376,23 @@ class SitemapDiscoverer
                 continue;
             }
 
-            if ( parse_url( $child, PHP_URL_HOST ) !== $host ) {
+            $childParts = parse_url( $child );
+            $childParts = is_array( $childParts ) ? $childParts : [];
+
+            // Compared on the whole origin rather than on the host alone. A
+            // host-only rule lets an index send the discoverer to
+            // `http://example.com:9200/` — a request primitive against
+            // services that firewall the internet but trust their own host,
+            // and a silent https-to-http downgrade on the way. Ports are
+            // already canonicalized by `UrlNormalizer`, so a strict comparison
+            // does not trip over the default port being written out.
+            $sameOrigin = ( $childParts[ 'scheme' ] ?? '' ) === ( $parentParts[ 'scheme' ] ?? '' )
+                && strtolower( (string) ( $childParts[ 'host' ] ?? '' ) ) === strtolower( (string) ( $parentParts[ 'host' ] ?? '' ) )
+                && ( $childParts[ 'port' ] ?? null ) === ( $parentParts[ 'port' ] ?? null );
+
+            if ( ! $sameOrigin ) {
                 $this->logger->warning(
-                    'Skipped a sitemap named by an index on a different host.',
+                    'Skipped a sitemap named by an index on a different origin.',
                     [ 'index' => $parent, 'sitemap' => $child ],
                 );
 
@@ -378,14 +462,21 @@ class SitemapDiscoverer
      *
      * @since 1.0.0
      *
+     * The effective address is reported back alongside the body because the
+     * host a document's entries are judged against has to be the host that
+     * served it, not the one that was asked for — otherwise following an
+     * apex-to-www redirect would make every entry in the document look like
+     * somebody else's.
+     * @since 1.0.0
+     *
      * @param  string  $sitemap  The sitemap URL.
      * @param  bool  $followRedirects  Whether this address came from the caller rather than from a document.
      *
-     * @throws SitemapException When the request fails or the response is not a success.
+     * @throws SitemapException When the request fails, the response is not a success, or the body is too large.
      *
-     * @return string The response body.
+     * @return array{body: string, url: string} The response body and the address it came from.
      */
-    protected function fetch( string $sitemap, bool $followRedirects = false ): string
+    protected function fetch( string $sitemap, bool $followRedirects = false ): array
     {
         try {
             $request = $this->http
@@ -405,7 +496,26 @@ class SitemapDiscoverer
             throw SitemapException::unreachable( $sitemap, $response->status() );
         }
 
-        return (string) $response->body();
+        // Checked before the body is touched where the server declared a
+        // length, and again afterwards because a chunked response declares
+        // none and Guzzle transparently inflates `Content-Encoding: gzip` — so
+        // a small compressed body can arrive as hundreds of megabytes.
+        if ( (int) $response->header( 'Content-Length' ) > self::MAX_BYTES ) {
+            throw SitemapException::tooLarge( $sitemap, self::MAX_BYTES );
+        }
+
+        $body = (string) $response->body();
+
+        if ( strlen( $body ) > self::MAX_BYTES ) {
+            throw SitemapException::tooLarge( $sitemap, self::MAX_BYTES );
+        }
+
+        $effective = $response->effectiveUri();
+
+        return [
+            'body' => $body,
+            'url'  => null === $effective ? $sitemap : (string) $effective,
+        ];
     }
 
     /**

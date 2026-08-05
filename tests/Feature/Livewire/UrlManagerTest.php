@@ -145,6 +145,40 @@ it( 'refuses a duplicate however it is spelled', function (): void {
     expect( PageSpeedUrl::query()->count() )->toBe( 1 );
 } );
 
+it( 'refuses a third-party URL, the same as the JSON endpoint does', function (): void {
+    // Mounting the component decides who may manage the monitored set, not
+    // what may enter it: being monitored is what opens the read endpoints.
+    Livewire::test( UrlManager::class )
+        ->set( 'newUrl', 'https://competitor.example/pricing' )
+        ->call( 'add' )
+        ->assertHasErrors( 'newUrl' )
+        ->assertSee( 'only monitors URLs on its own site' );
+
+    expect( PageSpeedUrl::query()->count() )->toBe( 0 );
+} );
+
+it( 'accepts a third-party URL once external URLs are allowed', function (): void {
+    config()->set( 'pagespeed-insights.routes.allow_external_urls', true );
+
+    Livewire::test( UrlManager::class )
+        ->set( 'newUrl', 'https://competitor.example/pricing' )
+        ->call( 'add' )
+        ->assertHasNoErrors();
+
+    expect( PageSpeedUrl::query()->sole()->url )->toBe( 'https://competitor.example/pricing' );
+} );
+
+it( 'always accepts a URL on this application\'s own site', function (): void {
+    config()->set( 'pagespeed-insights.routes.allow_external_urls', false );
+
+    Livewire::test( UrlManager::class )
+        ->set( 'newUrl', 'https://example.com/never-added' )
+        ->call( 'add' )
+        ->assertHasNoErrors();
+
+    expect( PageSpeedUrl::query()->sole()->url )->toBe( 'https://example.com/never-added' );
+} );
+
 it( 'lists hook-contributed URLs without any controls for them', function (): void {
     addFilter( UrlRegistry::FILTER_REGISTER_URLS, static fn ( array $urls ): array => [
         ...$urls,
@@ -215,7 +249,7 @@ it( 'asks before deleting a URL, because there is no undo', function (): void {
     $component = Livewire::test( UrlManager::class )
         ->call( 'confirmRemoval', $url->getKey() )
         ->assertSet( 'pendingRemovalId', $url->getKey() )
-        ->assertSee( 'Delete this URL and its history?' );
+        ->assertSee( 'Stop monitoring this URL?' );
 
     expect( PageSpeedUrl::query()->count() )->toBe( 1 );
 
@@ -224,6 +258,29 @@ it( 'asks before deleting a URL, because there is no undo', function (): void {
         ->assertSee( 'URL removed' );
 
     expect( PageSpeedUrl::query()->count() )->toBe( 0 );
+} );
+
+it( 'keeps the stored results and says so, because that is what it does', function (): void {
+    // Asserted on the behaviour rather than only on the copy, so the two can
+    // never drift apart again. Telling an operator the history was destroyed
+    // when it was kept is the dangerous direction of wrong: they will not go
+    // looking for it.
+    $url = PageSpeedUrl::factory()->create( [ 'url' => 'https://example.com/pricing' ] );
+
+    $result = PageSpeedResult::factory()->create( [
+        'url'              => 'https://example.com/pricing',
+        'strategy'         => 'mobile',
+        'pagespeed_url_id' => $url->getKey(),
+    ] );
+
+    Livewire::test( UrlManager::class )
+        ->call( 'confirmRemoval', $url->getKey() )
+        ->call( 'remove' )
+        ->assertSee( 'Its stored results were kept.' );
+
+    expect( PageSpeedResult::query()->count() )->toBe( 1 )
+        ->and( $result->fresh()->pagespeed_url_id )->toBeNull()
+        ->and( (string) $result->fresh()->url )->toBe( 'https://example.com/pricing' );
 } );
 
 it( 'abandons a pending deletion when it is cancelled', function (): void {

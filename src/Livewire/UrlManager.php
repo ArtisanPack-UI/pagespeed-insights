@@ -17,6 +17,7 @@ namespace ArtisanPackUI\PageSpeedInsights\Livewire;
 
 use ArtisanPackUI\PageSpeedInsights\Api\PageSpeedRequest;
 use ArtisanPackUI\PageSpeedInsights\Exceptions\SitemapException;
+use ArtisanPackUI\PageSpeedInsights\Http\Support\UrlScope;
 use ArtisanPackUI\PageSpeedInsights\Models\PageSpeedResult;
 use ArtisanPackUI\PageSpeedInsights\Models\PageSpeedUrl;
 use ArtisanPackUI\PageSpeedInsights\Support\ScoreBands;
@@ -72,14 +73,23 @@ use Livewire\Component;
  *
  * **Mounting this component is the authorization decision.** It carries no
  * gate of its own, and it can add, pause, and permanently delete monitored
- * URLs along with their score history. Put it behind whatever policy the
- * surrounding admin area uses.
+ * URLs. Put it behind whatever policy the surrounding admin area uses.
+ *
+ * That grant decides *who* may manage the monitored set; it does not decide
+ * *which* URLs may enter it. Adding is held to {@see UrlScope::allowsTest()},
+ * exactly as the JSON endpoint holds its own callers — because being monitored
+ * is what opens the read endpoints for a URL, so an unrestricted add form here
+ * would widen them for every authenticated user of the host application.
  *
  * Within that grant, nothing the browser sends is trusted to name a row: every
  * action re-checks the id against {@see self::$rows}, which is `#[Locked]` and
  * built server-side, so a client cannot reach a URL the component never
- * listed. Deletion is additionally two-step, because it discards a page's
- * whole measurement history and there is no undo.
+ * listed. Deletion is additionally two-step, because there is no undo on the
+ * row itself — its cadence, label, and form factors go with it. The stored
+ * measurements do not: the results foreign key is nulled rather than cascaded,
+ * precisely so that un-monitoring a URL cannot silently destroy its history.
+ * Every surface that reports a deletion has to say so, because an operator
+ * told the history was destroyed will not go looking for it.
  *
  * @package    ArtisanPack_UI
  * @subpackage PageSpeedInsights
@@ -401,6 +411,19 @@ class UrlManager extends Component
             return;
         }
 
+        // The same scope the JSON endpoint holds its callers to. Mounting this
+        // component decides who may manage the monitored set; it does not
+        // decide what may enter it, and a third-party URL stored here would
+        // widen the read endpoints for every authenticated user as surely as
+        // one added over HTTP.
+        if ( ! $this->scope()->allowsTest( $normalized ) ) {
+            $this->addError( 'newUrl', __(
+                'This installation only monitors URLs on its own site. Turn on pagespeed-insights.routes.allow_external_urls to monitor others.',
+            ) );
+
+            return;
+        }
+
         $label = trim( $this->newLabel );
 
         // Counted in characters rather than bytes, because that is what the
@@ -578,7 +601,7 @@ class UrlManager extends Component
             'warning',
             __( 'URL removed' ),
             __(
-                '":url" is no longer monitored, and its stored results have been deleted.',
+                '":url" is no longer monitored. Its stored results were kept.',
                 [ 'url' => $address ],
             ),
         );
@@ -883,6 +906,21 @@ class UrlManager extends Component
     protected function registry(): UrlRegistry
     {
         return app( UrlRegistry::class );
+    }
+
+    /**
+     * The URL scope.
+     *
+     * Resolved per call for the same reason as {@see self::registry()}: the
+     * monitored set it consults is assembled at read time.
+     *
+     * @since 1.0.0
+     *
+     * @return UrlScope The scope.
+     */
+    protected function scope(): UrlScope
+    {
+        return app( UrlScope::class );
     }
 
     /**

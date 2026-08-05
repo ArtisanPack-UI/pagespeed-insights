@@ -73,9 +73,40 @@ the Livewire components take — mounting one is the authorization decision — 
 it is deliberate, because a package cannot know what an application's admin role
 is called.
 
-Put your own policy in `routes.middleware`
-(`['web', 'auth', 'can:manage-pagespeed']`, say) if "logged in" is broader than
-"allowed to manage performance monitoring" on your installation.
+### Adding an ability check
+
+Set `routes.ability` where "logged in" is broader than "allowed to manage
+performance monitoring" — a SaaS with customer accounts, a site with public
+registration, anywhere the user table is not the staff list:
+
+```php
+// config/pagespeed-insights.php
+'routes' => [
+    'ability' => 'view_pagespeed_insights',
+],
+```
+
+or `PAGESPEED_ROUTES_ABILITY=view_pagespeed_insights` in `.env`. Then define the
+gate in your own application:
+
+```php
+// In the host application's AuthServiceProvider
+Gate::define( 'view_pagespeed_insights', fn ( User $user ): bool => $user->isAdmin() );
+```
+
+The ability is **appended** to `routes.middleware` as `can:` middleware, not
+substituted for it, so `auth` still runs first and a guest still gets a 401
+rather than a 403. That is the point of having the key at all: replacing
+`routes.middleware` replaces it wholesale, so an operator who only wanted an
+ability check would have to restate `web` and `auth` — and dropping one of them
+by accident while doing that publishes the endpoints.
+
+Unset is the default and changes nothing: the configured middleware is the whole
+authorization decision. Putting the check directly in `routes.middleware`
+(`['web', 'auth', 'can:manage-pagespeed']`) still works and is equivalent.
+
+If you use the CMS bridge, its three admin widgets already gate on
+`view_pagespeed_insights` — reuse that name here and the two line up.
 
 ### Which URLs an endpoint will answer for
 
@@ -97,6 +128,13 @@ Set `routes.allow_external_urls` (or `PAGESPEED_ALLOW_EXTERNAL_URLS`) to `true`
 on an installation that legitimately monitors other people's sites — an agency
 dashboard, most obviously. It widens the two write endpoints and never the read
 ones.
+
+That includes `GET /results/{id}`: polling a run is a read, so it answers only
+for monitored URLs and for ad hoc runs of this application's own pages, whatever
+the flag says. Queuing a run against an arbitrary URL is what the flag exists to
+permit; being able to read back by id whatever this installation has stored about
+a third party's site is not, and gating the poll on the write rule would make the
+results table enumerable by an authenticated user.
 
 ## Errors
 
@@ -198,9 +236,10 @@ id of can be fetched in full later.
 | `routes.enabled` | — | true | Whether the endpoints are registered at all |
 | `routes.prefix` | — | `pagespeed` | The path they sit under |
 | `routes.middleware` | — | `['web', 'auth']` | The stack they run through |
+| `routes.ability` | `PAGESPEED_ROUTES_ABILITY` | null | An optional Gate ability, appended as `can:` middleware |
 | `routes.allow_external_urls` | `PAGESPEED_ALLOW_EXTERNAL_URLS` | false | Whether `POST /test` and `POST /urls` accept URLs off this site |
 
-All four are read when the service provider boots. Turning `routes.enabled` off
+All five are read when the service provider boots. Turning `routes.enabled` off
 registers nothing, which is the right choice for an installation that only uses
 the console commands, the queue, and the Livewire components — an endpoint
 nobody calls is still an endpoint somebody can call.

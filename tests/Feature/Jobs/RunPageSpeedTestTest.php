@@ -11,9 +11,11 @@ use ArtisanPackUI\PageSpeedInsights\Jobs\RunPageSpeedTest;
 use ArtisanPackUI\PageSpeedInsights\Models\PageSpeedResult;
 use ArtisanPackUI\PageSpeedInsights\Models\PageSpeedUrl;
 use ArtisanPackUI\PageSpeedInsights\Notifications\ScoreRegressionNotification;
+use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Notification;
+use RuntimeException;
 use Tests\Support\RecordingQueueJob;
 
 uses( RefreshDatabase::class );
@@ -216,6 +218,68 @@ describe( 'quota exhaustion on a configured key', function (): void {
 
         expect( $url->fresh()->last_tested_at )->toBeNull();
     } );
+
+    it( 'postpones past the attempt budget without ever failing the run', function (): void {
+        config( [
+            'pagespeed-insights.job.tries'       => 3,
+            'pagespeed-insights.job.quota_delay' => 900,
+        ] );
+
+        Http::fake( [ '*' => Http::response( psiFixture( 'quota-error' ), 429 ) ] );
+
+        // One more postponement than the attempt budget allows, which is the
+        // shape of a multi-hour quota outage: every one of them is a release
+        // rather than a failure, so none of them may write a failure row.
+        foreach ( range( 1, 4 ) as $attempt ) {
+            $queueJob = psiRunJob( new RunPageSpeedTest( 'https://example.com/about' ), $attempt );
+
+            expect( $queueJob->releasedFor )->toBe( 900 )
+                ->and( $queueJob->failed )->toBeFalse();
+        }
+
+        expect( PageSpeedResult::query()->count() )->toBe( 0 );
+    } );
+} );
+
+describe( 'the retry deadline', function (): void {
+    it( 'outlives the postponements the quota delay allows for', function (): void {
+        config( [
+            'pagespeed-insights.job.tries'       => 3,
+            'pagespeed-insights.job.quota_delay' => 900,
+        ] );
+
+        $job = new RunPageSpeedTest( 'https://example.com/about' );
+
+        expect( $job->retryUntil()->getTimestamp() )
+            ->toBeGreaterThan( CarbonImmutable::now()->addSeconds( 900 * 3 )->getTimestamp() );
+    } );
+
+    it( 'keeps the failure budget in step with the configured tries', function (): void {
+        config( [ 'pagespeed-insights.job.tries' => 5 ] );
+
+        expect( ( new RunPageSpeedTest( 'https://example.com/about' ) )->maxExceptions )->toBe( 5 );
+    } );
+
+    it( 'is what the queue reads, so releases stop competing with the budget', function (): void {
+        $job      = new RunPageSpeedTest( 'https://example.com/about' );
+        $queueJob = new RecordingQueueJob( $job, 99 );
+
+        $job->setJob( $queueJob );
+
+        // Laravel skips the attempt check entirely while a deadline is still
+        // in the future, which is the whole mechanism this fix rests on.
+        expect( $queueJob->retryUntil() )->toBeGreaterThan( CarbonImmutable::now()->getTimestamp() )
+            ->and( $queueJob->maxExceptions() )->toBe( $job->tries );
+    } );
+
+    it( 'still records a failure when the run genuinely throws', function (): void {
+        $url = PageSpeedUrl::factory()->neverTested()->create( [ 'url' => 'https://example.com/about' ] );
+
+        ( new RunPageSpeedTest( 'https://example.com/about', PageSpeedRequest::STRATEGY_MOBILE, $url->getKey() ) )
+            ->failed( PageSpeedApiException::apiError( 503, 'https://example.com/about', 'Backend error' ) );
+
+        expect( PageSpeedResult::query()->where( 'status', PageSpeedResult::STATUS_FAILED )->count() )->toBe( 1 );
+    } );
 } );
 
 describe( 'transient failures', function (): void {
@@ -251,6 +315,19 @@ describe( 'transient failures', function (): void {
 
         expect( $url->fresh()->last_tested_at )->toBeNull()
             ->and( $url->fresh()->isDue() )->toBeTrue();
+    } );
+
+    it( 'redacts credentials out of the message it stores and shows', function (): void {
+        // `failed()` receives whatever the queue caught, not only this
+        // package's own exceptions, and the message is rendered to every
+        // authenticated viewer.
+        ( new RunPageSpeedTest( 'https://example.com/about' ) )
+            ->failed( new RuntimeException( 'GET https://example.com/x?key=SUPERSECRET failed' ) );
+
+        $message = (string) PageSpeedResult::query()->sole()->error_message;
+
+        expect( $message )->not->toContain( 'SUPERSECRET' )
+            ->and( $message )->toContain( 'https://example.com/x' );
     } );
 
     it( 'records a failure even when the queue names no exception', function (): void {

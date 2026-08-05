@@ -32,6 +32,12 @@ if ( ! function_exists( 'psiMonitoredUrl' ) ) {
      * completed a run, so a freshly created one is never stale — which is the
      * right default and the wrong starting point for most of these cases.
      *
+     * Created never-tested so the row means what these cases say it means.
+     * `last_tested_at` is written only by a completed run, and the detector
+     * reads it as one, so leaving the factory's default two-hours-ago stamp on
+     * a row described as having never run would be setting up a contradiction
+     * and asserting against it.
+     *
      * @param  array<string, mixed>  $attributes  Attribute overrides.
      * @param  int  $addedDaysAgo  How long ago the row was created.
      *
@@ -39,7 +45,7 @@ if ( ! function_exists( 'psiMonitoredUrl' ) ) {
      */
     function psiMonitoredUrl( array $attributes = [], int $addedDaysAgo = 90 ): PageSpeedUrl
     {
-        $url = PageSpeedUrl::factory()->create( array_merge(
+        $url = PageSpeedUrl::factory()->neverTested()->create( array_merge(
             [ 'url' => 'https://example.com/pricing', 'label' => null ],
             $attributes,
         ) );
@@ -115,6 +121,40 @@ it( 'measures the window against the per-URL frequency', function (): void {
 
     expect( $stale )->toHaveCount( 1 )
         ->and( $stale[ 0 ]->url )->toBe( 'https://example.com/hourly' );
+} );
+
+it( 'falls back to last_tested_at when the result rows have been pruned', function (): void {
+    // A retention window shorter than the cadence times the tolerance sweeps
+    // the completed rows before the staleness window elapses. Without this
+    // fallback a perfectly healthy URL reports as stale, and — the failure
+    // rows having been swept too — is diagnosed "the runs are not reaching a
+    // worker", which is a confident and wrong sentence about a healthy system.
+    $url = psiMonitoredUrl( [ 'test_frequency' => 'daily' ] );
+
+    $url->forceFill( [ 'last_tested_at' => CarbonImmutable::now()->subHour() ] )->save();
+
+    expect( PageSpeedResult::query()->count() )->toBe( 0 )
+        ->and( app( StalenessDetector::class )->detect() )->toBe( [] );
+} );
+
+it( 'still reports a URL whose last_tested_at is itself long past', function (): void {
+    $url = psiMonitoredUrl( [ 'test_frequency' => 'daily' ] );
+
+    $url->forceFill( [ 'last_tested_at' => CarbonImmutable::now()->subDays( 5 ) ] )->save();
+
+    expect( app( StalenessDetector::class )->detect() )->toHaveCount( 1 );
+} );
+
+it( 'prefers a stored run to last_tested_at when both are there', function (): void {
+    $url = psiMonitoredUrl( [ 'test_frequency' => 'daily' ] );
+
+    psiRunFor( $url, 60 * 24 * 3 );
+
+    // The stamp is newer, but the results table is the more precise record and
+    // stays authoritative wherever it still has the answer.
+    $url->forceFill( [ 'last_tested_at' => CarbonImmutable::now()->subHour() ] )->save();
+
+    expect( app( StalenessDetector::class )->detect() )->toHaveCount( 1 );
 } );
 
 it( 'honours the configured missed cycle tolerance', function (): void {

@@ -19,6 +19,7 @@ use ArtisanPackUI\PageSpeedInsights\Contracts\ApiKeyRepository;
 use ArtisanPackUI\PageSpeedInsights\Jobs\RunPageSpeedTest;
 use ArtisanPackUI\PageSpeedInsights\Models\PageSpeedUrl;
 use ArtisanPackUI\PageSpeedInsights\Urls\UrlRegistry;
+use Carbon\CarbonImmutable;
 use Carbon\CarbonInterface;
 use Illuminate\Contracts\Config\Repository as ConfigRepository;
 use Illuminate\Database\Eloquent\Builder;
@@ -117,8 +118,13 @@ class TestScheduler
         /** @var Builder<PageSpeedUrl> $query */
         $query = PageSpeedUrl::query();
 
+        // `notInFlight` is what stops a tick re-queuing URLs whose jobs from
+        // an earlier tick are still on the queue. Due-ness alone is measured
+        // from `last_tested_at`, which only a completed run writes, so during
+        // a quota outage every tick would otherwise re-dispatch the whole due
+        // set and each duplicate would spend real quota to learn nothing.
         /** @var Collection<int, PageSpeedUrl> $due */
-        $due = $query->due( $now )->orderBy( 'id' )->get();
+        $due = $query->due( $now )->notInFlight( $now )->orderBy( 'id' )->get();
 
         return $this->dispatchAll( $due );
     }
@@ -159,6 +165,8 @@ class TestScheduler
         $jobs = 0;
 
         foreach ( $urls as $url ) {
+            $dispatched = 0;
+
             foreach ( $url->effectiveStrategies() as $strategy ) {
                 RunPageSpeedTest::dispatch(
                     (string) $url->url,
@@ -166,8 +174,18 @@ class TestScheduler
                     $url->exists ? $url->getKey() : null,
                 );
 
-                ++$jobs;
+                ++$dispatched;
             }
+
+            // Stamped after the jobs are on the queue rather than before, so a
+            // dispatch that threw does not leave the URL looking busy for the
+            // length of a retry window. A hook-contributed row has nothing to
+            // stamp; it is rebuilt from the filter on the next tick anyway.
+            if ( $dispatched > 0 && $url->exists ) {
+                $url->forceFill( [ 'last_dispatched_at' => CarbonImmutable::now() ] )->save();
+            }
+
+            $jobs += $dispatched;
         }
 
         $report = [ 'urls' => $urls->count(), 'jobs' => $jobs ];

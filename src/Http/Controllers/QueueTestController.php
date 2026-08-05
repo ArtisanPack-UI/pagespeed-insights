@@ -21,6 +21,7 @@ use ArtisanPackUI\PageSpeedInsights\Http\Support\UrlScope;
 use ArtisanPackUI\PageSpeedInsights\Jobs\RunPageSpeedTest;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
 use Throwable;
 
 /**
@@ -126,15 +127,24 @@ class QueueTestController extends Controller
         try {
             RunPageSpeedTest::dispatch( $url, $strategy );
         } catch ( Throwable $exception ) {
-            // Redacted before it reaches a client. This message comes from the
-            // queue driver rather than from this package, so it can carry a
-            // connection string — and a credential in one.
+            // Logged in full, reported in general terms. This message comes
+            // from the queue driver rather than from this package: redaction
+            // takes the credentials out of a connection string, but the
+            // internal hostname, port, and file path it also carries are not
+            // things a client needs in order to know the run did not start.
+            Log::error(
+                'A PageSpeed run could not be queued.',
+                [
+                    'url'       => $url,
+                    'strategy'  => $strategy,
+                    'exception' => $exception::class,
+                    'error'     => PageSpeedApiException::redactCredentials( $exception->getMessage() ),
+                ],
+            );
+
             return $this->error(
                 self::ERROR_QUEUE_UNAVAILABLE,
-                __(
-                    'The test could not be queued: :message',
-                    [ 'message' => PageSpeedApiException::redactCredentials( $exception->getMessage() ) ],
-                ),
+                __( 'The test could not be queued. Check the application log for why.' ),
                 503,
             );
         }

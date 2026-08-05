@@ -111,7 +111,7 @@ class ResultController extends Controller
     {
         $result = PageSpeedResult::query()->whereKey( $id )->first();
 
-        if ( null === $result || ! $this->scope->allowsTest( (string) $result->url ) ) {
+        if ( null === $result || ! $this->scope->allowsPoll( (string) $result->url ) ) {
             // The same answer either way, so that a caller cannot map the
             // monitored set — or the id space — by probing it.
             return $this->notFound();
@@ -141,7 +141,7 @@ class ResultController extends Controller
     {
         $ticket = $this->tickets->poll( $id );
 
-        if ( null === $ticket || ! $this->scope->allowsTest( $ticket[ 'url' ] ) ) {
+        if ( null === $ticket || ! $this->scope->allowsPoll( $ticket[ 'url' ] ) ) {
             return $this->notFound();
         }
 

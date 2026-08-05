@@ -7,7 +7,7 @@ title: Installation
 ## Requirements
 
 - PHP **8.2+**
-- Laravel **10, 11, 12, or 13**
+- Laravel **12 or 13**
 - A **PageSpeed Insights API key** — see below; the package cannot run without one
 - [`artisanpack-ui/google`](https://github.com/ArtisanPack-UI/google) **^1.0** — installed automatically. A connected Google account is optional and used only as an auth fallback.
 - [`artisanpack-ui/hooks`](https://github.com/ArtisanPack-UI/hooks) **^1.2** — installed automatically; backs the `ap.pageSpeed.*` actions and filters

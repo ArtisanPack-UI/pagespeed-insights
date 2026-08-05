@@ -197,7 +197,7 @@ class RecordingQueueJob implements JobContract
      */
     public function maxExceptions()
     {
-        return null;
+        return $this->instance->maxExceptions ?? null;
     }
 
     /**
@@ -213,7 +213,15 @@ class RecordingQueueJob implements JobContract
      */
     public function retryUntil()
     {
-        return null;
+        if ( ! method_exists( $this->instance, 'retryUntil' ) ) {
+            return null;
+        }
+
+        // The real wrapper reads a unix timestamp the queue wrote into the
+        // payload from the job's own `retryUntil()`, so the double resolves it
+        // the same way rather than reporting "no deadline" for a job that
+        // declares one.
+        return $this->instance->retryUntil()->getTimestamp();
     }
 
     /**

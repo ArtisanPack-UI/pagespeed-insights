@@ -188,7 +188,9 @@ it( 'follows a redirect on the sitemap the caller named', function (): void {
         ->toBe( [ 'https://www.example.com/about' ] );
 } );
 
-it( 'still lists page URLs on other hosts, which are fetched by Google and not by us', function (): void {
+it( 'drops page URLs hosted somewhere other than the sitemap', function (): void {
+    // Whoever writes the sitemap would otherwise choose what this install
+    // monitors, and being monitored is what opens the read endpoints.
     Http::fake( [
         'https://example.com/sitemap.xml' => Http::response( psiSitemapUrlset( [
             'https://example.com/about',
@@ -197,7 +199,72 @@ it( 'still lists page URLs on other hosts, which are fetched by Google and not b
     ] );
 
     expect( $this->discoverer->discover( 'https://example.com/sitemap.xml' ) )
+        ->toBe( [ 'https://example.com/about' ] );
+} );
+
+it( 'keeps page URLs on other hosts once external entries are allowed', function (): void {
+    Http::fake( [
+        'https://example.com/sitemap.xml' => Http::response( psiSitemapUrlset( [
+            'https://example.com/about',
+            'https://cdn.example.net/asset-page',
+        ] ) ),
+    ] );
+
+    expect( $this->discoverer->allowExternal()->discover( 'https://example.com/sitemap.xml' ) )
         ->toBe( [ 'https://example.com/about', 'https://cdn.example.net/asset-page' ] );
+} );
+
+it( 'judges entries against the host that served the sitemap, not the one asked for', function (): void {
+    // The caller-named sitemap follows redirects on purpose, and apex-to-www
+    // is the ordinary case: its entries are not third-party entries.
+    Http::fake( [
+        'https://example.com/sitemap.xml'     => Http::response( '', 301, [ 'Location' => 'https://www.example.com/sitemap.xml' ] ),
+        'https://www.example.com/sitemap.xml' => Http::response( psiSitemapUrlset( [ 'https://www.example.com/about' ] ) ),
+    ] );
+
+    expect( $this->discoverer->discover( 'https://example.com/sitemap.xml' ) )
+        ->toBe( [ 'https://www.example.com/about' ] );
+} );
+
+it( 'refuses a child sitemap on the same host but a different port', function (): void {
+    Http::fake( [
+        'https://example.com/sitemap.xml' => Http::response( psiSitemapIndex( [
+            'https://example.com:9200/sitemap.xml',
+            'http://example.com/plain.xml',
+            'https://example.com/pages.xml',
+        ] ) ),
+        'https://example.com/pages.xml'   => Http::response( psiSitemapUrlset( [ 'https://example.com/about' ] ) ),
+    ] );
+
+    expect( $this->discoverer->discover( 'https://example.com/sitemap.xml' ) )
+        ->toBe( [ 'https://example.com/about' ] );
+
+    Http::assertNotSent( static fn ( $request ): bool => str_contains( $request->url(), ':9200' ) );
+    Http::assertNotSent( static fn ( $request ): bool => str_starts_with( $request->url(), 'http://example.com' ) );
+} );
+
+it( 'refuses a sitemap document larger than it will read', function (): void {
+    Http::fake( [
+        'https://example.com/sitemap.xml' => Http::response(
+            str_repeat( 'a', SitemapDiscoverer::MAX_BYTES + 1 ),
+        ),
+    ] );
+
+    expect( fn (): array => $this->discoverer->discover( 'https://example.com/sitemap.xml' ) )
+        ->toThrow( SitemapException::class );
+} );
+
+it( 'refuses a sitemap that declares an oversized length before reading it', function (): void {
+    Http::fake( [
+        'https://example.com/sitemap.xml' => Http::response(
+            psiSitemapUrlset( [ 'https://example.com/about' ] ),
+            200,
+            [ 'Content-Length' => (string) ( SitemapDiscoverer::MAX_BYTES + 1 ) ],
+        ),
+    ] );
+
+    expect( fn (): array => $this->discoverer->discover( 'https://example.com/sitemap.xml' ) )
+        ->toThrow( SitemapException::class );
 } );
 
 it( 'does not fetch anything a sitemap names through an external entity', function (): void {

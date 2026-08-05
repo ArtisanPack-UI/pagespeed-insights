@@ -21,6 +21,8 @@ use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
+use Illuminate\Support\Facades\Log;
+use Throwable;
 
 /**
  * Sends one digest window's worth of regressions as a single notification.
@@ -41,6 +43,21 @@ class SendRegressionDigest implements ShouldQueue
     use InteractsWithQueue;
     use Queueable;
     use SerializesModels;
+
+    /**
+     * Attempts allowed before the digest is given up on.
+     *
+     * Declared rather than left to the worker's own default, which is one. If
+     * the cache store is briefly unreachable when {@see AlertDispatcher::flush()}
+     * reads the buffer, a single attempt means the window's regressions sit in
+     * cache until they expire and then vanish — silently, from the component
+     * whose entire job is not being silent.
+     *
+     * @since 1.0.0
+     *
+     * @var int
+     */
+    public int $tries = 3;
 
     /**
      * Build the job.
@@ -69,6 +86,31 @@ class SendRegressionDigest implements ShouldQueue
     public function handle( AlertDispatcher $dispatcher ): void
     {
         $dispatcher->flush();
+    }
+
+    /**
+     * Say loudly that a window of regressions was never delivered.
+     *
+     * There is nothing left to retry by this point and nothing else will
+     * notice: the buffered regressions expire out of the cache on their own,
+     * so without this line a score drop would be detected, buffered, and then
+     * quietly discarded with no record anywhere that it happened.
+     *
+     * @since 1.0.0
+     *
+     * @param  Throwable|null  $exception  Why the job died, when the queue knows.
+     *
+     * @return void
+     */
+    public function failed( ?Throwable $exception = null ): void
+    {
+        Log::error(
+            'A PageSpeed regression digest could not be sent, and the regressions it held are lost. Check the cache store the alert buffer runs on.',
+            [
+                'exception' => null === $exception ? null : $exception::class,
+                'error'     => $exception?->getMessage(),
+            ],
+        );
     }
 
     /**

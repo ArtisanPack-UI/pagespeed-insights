@@ -47,7 +47,6 @@ jobs:
         run: ./vendor/bin/php-cs-fixer fix --dry-run --diff
 
       - name: Run PHPCS
-        continue-on-error: true
         run: ./vendor/bin/phpcs
 
   js:

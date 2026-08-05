@@ -396,6 +396,18 @@ return [
     |                         default for a reason — the endpoints read a
     |                         site's performance history and one of them spends
     |                         API quota — and removing it publishes both.
+    | - "ability"             an optional Gate ability appended to the stack as
+    |                         `can:` middleware. Null means the configured
+    |                         middleware is the whole of the authorization
+    |                         decision, which is the historical behaviour: an
+    |                         authenticated user is an authorized one. Set it on
+    |                         an installation where "logged in" is broader than
+    |                         "allowed to manage performance monitoring" — a
+    |                         SaaS with customer accounts, a site with public
+    |                         registration — and define the gate in your own
+    |                         service provider. This is additive: it does not
+    |                         replace "middleware", so the `auth` entry above
+    |                         cannot be dropped by reaching for it.
     | - "allow_external_urls" whether `POST /test` and `POST /urls` accept a URL
     |                         that is neither monitored nor on this
     |                         application's own origin. Off by default: an ad
@@ -417,6 +429,7 @@ return [
         'enabled'             => true,
         'prefix'              => 'pagespeed',
         'middleware'          => [ 'web', 'auth' ],
+        'ability'             => env( 'PAGESPEED_ROUTES_ABILITY' ),
         'allow_external_urls' => env( 'PAGESPEED_ALLOW_EXTERNAL_URLS', false ),
     ],
 

@@ -17,6 +17,7 @@ namespace ArtisanPackUI\PageSpeedInsights\Models;
 
 use ArtisanPackUI\PageSpeedInsights\Api\PageSpeedRequest;
 use ArtisanPackUI\PageSpeedInsights\Database\Factories\PageSpeedUrlFactory;
+use ArtisanPackUI\PageSpeedInsights\Jobs\RunPageSpeedTest;
 use Carbon\CarbonImmutable;
 use Carbon\CarbonInterface;
 use Illuminate\Database\Eloquent\Builder;
@@ -39,6 +40,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  * @property bool $is_active
  * @property string|null $test_frequency
  * @property CarbonImmutable|null $last_tested_at
+ * @property CarbonImmutable|null $last_dispatched_at
  *
  * @package    ArtisanPack_UI
  * @subpackage PageSpeedInsights
@@ -139,6 +141,7 @@ class PageSpeedUrl extends Model
         'is_active',
         'test_frequency',
         'last_tested_at',
+        'last_dispatched_at',
     ];
 
     /**
@@ -168,9 +171,10 @@ class PageSpeedUrl extends Model
      * @var array<string, string>
      */
     protected $casts = [
-        'strategies'     => 'array',
-        'is_active'      => 'boolean',
-        'last_tested_at' => 'immutable_datetime',
+        'strategies'         => 'array',
+        'is_active'          => 'boolean',
+        'last_tested_at'     => 'immutable_datetime',
+        'last_dispatched_at' => 'immutable_datetime',
     ];
 
     /**
@@ -247,6 +251,43 @@ class PageSpeedUrl extends Model
                     ->whereNotIn( 'test_frequency', $known )
                     ->where( 'last_tested_at', '<=', $now->subMinutes( self::FREQUENCY_INTERVALS[ $fallback ] ) );
             } );
+        } );
+    }
+
+    /**
+     * Rows with no run still plausibly working its way through the queue.
+     *
+     * Deliberately separate from {@see self::scopeDue()} rather than folded
+     * into it, because the two answer different questions. Due-ness is "is
+     * this URL owed a measurement", which {@see self::isDue()} has to answer
+     * identically for a screen; this is "would queuing it right now produce a
+     * second copy of a run already in flight", which only the dispatcher asks.
+     *
+     * The window is the queued job's own retry deadline. Due-ness is measured
+     * from `last_tested_at`, which only a completed run writes, so without
+     * this a job that outlives its URL's cadence — rate-limit spreading, a
+     * quota postponement, a restarted worker — is re-queued by the next tick,
+     * and a multi-hour outage accumulates one duplicate per tick per URL that
+     * all run and all spend real quota when service returns. Once the deadline
+     * has passed the job is finished or abandoned either way, so a genuinely
+     * lost one is picked up again rather than stranding the URL.
+     *
+     * @since 1.0.0
+     *
+     * @param  Builder<PageSpeedUrl>  $query  The query to constrain.
+     * @param  CarbonInterface|null  $now  The moment to measure from; defaults to now.
+     *
+     * @return Builder<PageSpeedUrl> The constrained query.
+     */
+    public function scopeNotInFlight( Builder $query, ?CarbonInterface $now = null ): Builder
+    {
+        $now = null === $now ? CarbonImmutable::now() : CarbonImmutable::instance( $now );
+
+        $stale = $now->subSeconds( RunPageSpeedTest::maximumLifetimeSeconds() );
+
+        return $query->where( function ( Builder $free ) use ( $stale ): void {
+            $free->whereNull( 'last_dispatched_at' )
+                ->orWhere( 'last_dispatched_at', '<=', $stale );
         } );
     }
 

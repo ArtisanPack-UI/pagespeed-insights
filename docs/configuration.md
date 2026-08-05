@@ -179,12 +179,21 @@ Documented in full in [HTTP endpoints](http-endpoints.md).
 | `routes.enabled` | — | true | Whether the endpoints are registered at all. |
 | `routes.prefix` | — | `pagespeed` | The path they sit under. |
 | `routes.middleware` | — | `['web', 'auth']` | The stack they run through. |
+| `routes.ability` | `PAGESPEED_ROUTES_ABILITY` | null | An optional Gate ability, appended to the stack as `can:` middleware. |
 | `routes.allow_external_urls` | `PAGESPEED_ALLOW_EXTERNAL_URLS` | false | Whether `POST /test` and `POST /urls` accept URLs off this site. |
 
-All four are read when the service provider boots. Replacing
+All five are read when the service provider boots. Replacing
 `routes.middleware` replaces it **wholesale**, including the `auth` entry: the
 package applies the stack you configure rather than adding a guard of its own on
 top of it.
+
+`routes.ability` is the exception, and exists because of that wholesale
+replacement: it is **appended** to whatever `middleware` holds rather than
+substituted for it, so adding an authorization check does not mean restating
+`web` and `auth` and risking dropping one. Left unset — the default — the
+middleware stack is the whole authorization decision and an authenticated user
+is an authorized one. See [HTTP endpoints](http-endpoints.md) for when to set
+it.
 
 ## Retention
 

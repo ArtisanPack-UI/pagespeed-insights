@@ -240,6 +240,18 @@ class StalenessDetector
             $frequency = $url->frequency();
             $lastRun   = $lastRuns[ $address ] ?? null;
 
+            // Falls back to the monitored row's own stamp before falling back
+            // to its creation date. `last_tested_at` is written only by a
+            // completed run and is not prunable, so it still answers this
+            // question on an install whose retention window is shorter than
+            // the URL's cadence — where the results rows this lookup prefers
+            // have already been swept, and their absence would otherwise read
+            // as a URL that went quiet, diagnosed with a confident and wrong
+            // "the runs are not reaching a worker".
+            if ( null === $lastRun && null !== $url->last_tested_at ) {
+                $lastRun = CarbonImmutable::instance( $url->last_tested_at );
+            }
+
             // A URL that has never completed a run is measured from when it
             // was added: a page registered a minute ago has not "stopped"
             // reporting, it has not started. A row with no timestamp at all

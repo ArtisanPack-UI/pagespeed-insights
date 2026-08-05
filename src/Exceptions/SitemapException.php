@@ -106,6 +106,27 @@ class SitemapException extends RuntimeException
     }
 
     /**
+     * The response is larger than one sitemap document may be.
+     *
+     * @since 1.0.0
+     *
+     * @param  string  $sitemap  The sitemap URL.
+     * @param  int  $maxBytes  The cap that was exceeded.
+     *
+     * @return static The built exception.
+     */
+    public static function tooLarge( string $sitemap, int $maxBytes ): static
+    {
+        return static::for(
+            $sitemap,
+            __(
+                'The response from :sitemap is larger than the :max byte limit this package reads. A document that big is not a sitemap this package can use, and reading it risks exhausting the memory of the process that asked for it.',
+                [ 'sitemap' => $sitemap, 'max' => (string) $maxBytes ],
+            ),
+        );
+    }
+
+    /**
      * The response was fetched but is not readable as a sitemap.
      *
      * @since 1.0.0

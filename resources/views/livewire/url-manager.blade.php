@@ -172,11 +172,13 @@
                                 </span>
                             @elseif ($pendingRemovalId === $row['id'])
                                 {{--
-                                    Two-step because there is no undo: deleting
-                                    a URL discards every measurement ever taken
-                                    of that page.
+                                    Two-step because there is no undo on the row
+                                    itself: its cadence, label, and form factors
+                                    are gone. The measurements are not — the
+                                    results foreign key is nulled rather than
+                                    cascaded — so this must not claim otherwise.
                                 --}}
-                                <span class="text-xs">{{ __( 'Delete this URL and its history?' ) }}</span>
+                                <span class="text-xs">{{ __( 'Stop monitoring this URL?' ) }}</span>
 
                                 <x-artisanpack-button
                                     wire:click="remove"

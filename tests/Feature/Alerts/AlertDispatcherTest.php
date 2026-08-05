@@ -12,6 +12,7 @@ use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Notification;
 use Illuminate\Support\Facades\Queue;
+use RuntimeException;
 
 beforeEach( function (): void {
     config()->set( 'pagespeed-insights.alerts.enabled', true );
@@ -178,6 +179,21 @@ it( 'queues a new flush for the next window after one has gone out', function ()
     $dispatcher->report( [ psiRegression() ] );
 
     Queue::assertPushed( SendRegressionDigest::class, 2 );
+} );
+
+it( 'gives the digest job a retry budget and a loud failure', function (): void {
+    // Under a default --tries=1 worker a single unreachable-cache blip would
+    // otherwise drop a whole window of regressions with nothing in the log,
+    // from the component whose entire job is not being silent.
+    $job = new SendRegressionDigest();
+
+    expect( $job->tries )->toBeGreaterThan( 1 );
+
+    Log::shouldReceive( 'error' )
+        ->once()
+        ->withArgs( static fn ( string $message ): bool => str_contains( $message, 'could not be sent' ) );
+
+    $job->failed( new RuntimeException( 'Cache store unreachable' ) );
 } );
 
 it( 'sends immediately when digesting is switched off', function (): void {

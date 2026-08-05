@@ -78,6 +78,54 @@ describe( 'dispatching what is due', function (): void {
         Queue::assertNothingPushed();
     } );
 
+    it( 'does not re-queue a URL whose run has not come back yet', function (): void {
+        // The shape of a quota outage: nothing completes, so nothing stamps
+        // `last_tested_at`, and every tick would otherwise re-dispatch the
+        // whole due set and accumulate one duplicate per URL per tick.
+        PageSpeedUrl::factory()->neverTested()->strategy()->create( [ 'url' => 'https://example.com/about' ] );
+
+        expect( app( TestScheduler::class )->dispatchDue() )->toBe( [ 'urls' => 1, 'jobs' => 1 ] )
+            ->and( app( TestScheduler::class )->dispatchDue() )->toBe( [ 'urls' => 0, 'jobs' => 0 ] )
+            ->and( app( TestScheduler::class )->dispatchDue() )->toBe( [ 'urls' => 0, 'jobs' => 0 ] );
+
+        expect( psiQueuedRuns() )->toBe( [ 'https://example.com/about|mobile' ] );
+    } );
+
+    it( 'records when a URL was dispatched', function (): void {
+        $url = PageSpeedUrl::factory()->neverTested()->create( [ 'url' => 'https://example.com/about' ] );
+
+        expect( $url->last_dispatched_at )->toBeNull();
+
+        app( TestScheduler::class )->dispatchDue();
+
+        expect( $url->fresh()->last_dispatched_at )->not->toBeNull()
+            ->and( $url->fresh()->last_tested_at )->toBeNull();
+    } );
+
+    it( 'queues a URL again once its run can no longer be alive', function (): void {
+        PageSpeedUrl::factory()->neverTested()->strategy()->create( [ 'url' => 'https://example.com/about' ] );
+
+        app( TestScheduler::class )->dispatchDue();
+
+        // A genuinely lost job must not strand the URL forever, so the window
+        // ends where the job's own retry deadline does.
+        $this->travel( RunPageSpeedTest::maximumLifetimeSeconds() + 60 )->seconds();
+
+        expect( app( TestScheduler::class )->dispatchDue() )->toBe( [ 'urls' => 1, 'jobs' => 1 ] );
+    } );
+
+    it( 'still dispatches a URL an operator asked for by hand', function (): void {
+        $url = PageSpeedUrl::factory()->neverTested()->strategy()->create( [ 'url' => 'https://example.com/about' ] );
+
+        app( TestScheduler::class )->dispatchFor( $url );
+
+        // Due-ness is not consulted on this path, and neither is in-flightness:
+        // the operator has already decided the run should happen.
+        expect( app( TestScheduler::class )->dispatchFor( $url->fresh() ) )->toBe( [ 'urls' => 1, 'jobs' => 1 ] );
+
+        Queue::assertPushed( RunPageSpeedTest::class, 2 );
+    } );
+
     it( 'carries the monitored row id onto each job', function (): void {
         $url = PageSpeedUrl::factory()->neverTested()->strategy()->create( [ 'url' => 'https://example.com/about' ] );
 

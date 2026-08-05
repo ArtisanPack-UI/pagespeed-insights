@@ -52,10 +52,11 @@ use Throwable;
  *   long backoff, silently, and present as a broken queue rather than as the
  *   one-line configuration fix it is. So this fails immediately, records the
  *   row, and logs at error level with the remedy in the message.
- * - **Quota exhausted on a configured key.** Released with a long delay
- *   rather than consuming a retry: the same request will succeed once the
- *   window rolls over, and spending three attempts on it inside one hour
- *   just converts a postponement into a failure.
+ * - **Quota exhausted on a configured key.** Released with a long delay. The
+ *   run is bounded by {@see self::retryUntil()} rather than by an attempt
+ *   count, so a postponement does not spend the failure budget — the same
+ *   request will succeed once the window rolls over, and only a genuine
+ *   exception counts against `$maxExceptions`.
  * - **Anything else** — a 5xx, a transport error, a Lighthouse runtime
  *   error. Retried with backoff, and recorded as failed once the attempts
  *   are exhausted.
@@ -140,6 +141,18 @@ class RunPageSpeedTest implements ShouldQueue
     public const DEFAULT_QUOTA_DELAY = 1800;
 
     /**
+     * Seconds of headroom added to the retry deadline.
+     *
+     * Covers the rate limiter spreading a large cycle out on top of however
+     * many quota windows the deadline already allows for.
+     *
+     * @since 1.0.0
+     *
+     * @var int
+     */
+    protected const RETRY_WINDOW_PADDING = 3600;
+
+    /**
      * Seconds this attempt may run for.
      *
      * @since 1.0.0
@@ -156,6 +169,19 @@ class RunPageSpeedTest implements ShouldQueue
      * @var int
      */
     public int $tries = self::DEFAULT_TRIES;
+
+    /**
+     * Genuine exceptions allowed before the run is recorded as failed.
+     *
+     * Distinct from `$tries`, which a self-release also spends. Only a
+     * throwing attempt reaches this counter, so a postponed run is not a
+     * failing one.
+     *
+     * @since 1.0.0
+     *
+     * @var int
+     */
+    public int $maxExceptions = self::DEFAULT_TRIES;
 
     /**
      * Seconds to wait before each retry.
@@ -195,10 +221,11 @@ class RunPageSpeedTest implements ShouldQueue
         public string $strategy = PageSpeedRequest::STRATEGY_MOBILE,
         public ?int $monitoredUrlId = null,
     ) {
-        $this->timeout      = $this->positiveConfig( 'pagespeed-insights.job.timeout', self::DEFAULT_TIMEOUT );
-        $this->tries        = $this->positiveConfig( 'pagespeed-insights.job.tries', self::DEFAULT_TRIES );
-        $this->quotaDelay   = $this->positiveConfig( 'pagespeed-insights.job.quota_delay', self::DEFAULT_QUOTA_DELAY );
-        $this->retryBackoff = $this->configuredBackoff();
+        $this->timeout       = static::positiveConfig( 'pagespeed-insights.job.timeout', self::DEFAULT_TIMEOUT );
+        $this->tries         = static::positiveConfig( 'pagespeed-insights.job.tries', self::DEFAULT_TRIES );
+        $this->maxExceptions = $this->tries;
+        $this->quotaDelay    = static::positiveConfig( 'pagespeed-insights.job.quota_delay', self::DEFAULT_QUOTA_DELAY );
+        $this->retryBackoff  = $this->configuredBackoff();
 
         $this->onConnection( $this->stringConfig( 'pagespeed-insights.queue.connection' ) );
         $this->onQueue( $this->stringConfig( 'pagespeed-insights.queue.queue' ) );
@@ -270,9 +297,14 @@ class RunPageSpeedTest implements ShouldQueue
      */
     public function failed( ?Throwable $exception = null ): void
     {
+        // Redacted because this callback receives whatever the queue caught,
+        // not only this package's own exceptions: a QueryException embeds the
+        // full SQL, and an HTTP-layer error that never went through
+        // PageSpeedApiException can still carry a `key=` in its message. The
+        // string is stored to `error_message` and rendered to every viewer.
         $message = null === $exception
             ? __( 'The PageSpeed run did not complete and the queue gave up on it.' )
-            : $exception->getMessage();
+            : PageSpeedApiException::redactCredentials( $exception->getMessage() );
 
         Log::error(
             'A PageSpeed run failed permanently.',
@@ -307,6 +339,51 @@ class RunPageSpeedTest implements ShouldQueue
     public function backoff(): array
     {
         return $this->retryBackoff;
+    }
+
+    /**
+     * The wall-clock deadline after which this run stops being retried.
+     *
+     * Laravel fails a job once its attempt count passes `$tries`, and an
+     * attempt is counted on every reservation — including the ones this job
+     * ends by releasing itself. Both of the release paths here are
+     * postponements rather than failures: a quota rejection will succeed once
+     * the window rolls over, and a job the rate limiter spreads has not yet
+     * reached Google at all. Counting either against a three-attempt budget is
+     * what turns a busy cycle into a wall of failure rows.
+     *
+     * A deadline replaces that budget outright: `retryUntil()` short-circuits
+     * the attempt check, so releases postpone freely and only a genuine
+     * exception — counted by `$maxExceptions` — spends the failure budget.
+     *
+     * @since 1.0.0
+     *
+     * @return CarbonImmutable The moment after which the run is abandoned.
+     */
+    public function retryUntil(): CarbonImmutable
+    {
+        return CarbonImmutable::now()->addSeconds(
+            self::lifetimeFor( $this->tries, $this->quotaDelay ),
+        );
+    }
+
+    /**
+     * The longest a queued run may still be alive, under current config.
+     *
+     * Read by the scheduler rather than by the job: it is how long a dispatch
+     * has to be remembered before re-queuing the same URL is something other
+     * than queuing a duplicate of a run that has not given up yet.
+     *
+     * @since 1.0.0
+     *
+     * @return int Seconds from dispatch to the retry deadline.
+     */
+    public static function maximumLifetimeSeconds(): int
+    {
+        return self::lifetimeFor(
+            static::positiveConfig( 'pagespeed-insights.job.tries', self::DEFAULT_TRIES ),
+            static::positiveConfig( 'pagespeed-insights.job.quota_delay', self::DEFAULT_QUOTA_DELAY ),
+        );
     }
 
     /**
@@ -563,6 +640,25 @@ class RunPageSpeedTest implements ShouldQueue
     }
 
     /**
+     * How long a run started now may keep retrying.
+     *
+     * The single expression behind both {@see self::retryUntil()} and
+     * {@see self::maximumLifetimeSeconds()}, so the deadline the queue honours
+     * and the window the scheduler dedupes against cannot drift apart.
+     *
+     * @since 1.0.0
+     *
+     * @param  int  $tries  The attempt budget.
+     * @param  int  $quotaDelay  Seconds a quota postponement waits.
+     *
+     * @return int Seconds until the run is abandoned.
+     */
+    protected static function lifetimeFor( int $tries, int $quotaDelay ): int
+    {
+        return ( $quotaDelay * ( $tries + 1 ) ) + self::RETRY_WINDOW_PADDING;
+    }
+
+    /**
      * Read a positive integer out of config.
      *
      * @since 1.0.0
@@ -572,7 +668,7 @@ class RunPageSpeedTest implements ShouldQueue
      *
      * @return int The configured value, or the fallback.
      */
-    protected function positiveConfig( string $key, int $fallback ): int
+    protected static function positiveConfig( string $key, int $fallback ): int
     {
         $value = config( $key, $fallback );
 

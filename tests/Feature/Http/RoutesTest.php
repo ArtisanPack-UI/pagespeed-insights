@@ -62,3 +62,21 @@ it( 'serves an authenticated request', function (): void {
         ->getJson( '/pagespeed/scores?url=https://example.com/page' )
         ->assertOk();
 } );
+
+it( 'adds no ability check unless one is configured', function (): void {
+    // The regression guard that matters most for `routes.ability`: it is
+    // additive, so an installation that never sets it must be untouched.
+    $middleware = collect( Route::getRoutes() )
+        ->filter( static fn ( $route ): bool => str_starts_with( $route->uri(), 'pagespeed/' ) )
+        ->flatMap( static fn ( $route ): array => $route->gatherMiddleware() )
+        ->unique()
+        ->values()
+        ->all();
+
+    expect( $middleware )->toContain( 'auth' )
+        ->and( $middleware )->not->toContain( 'can:view_pagespeed_insights' );
+
+    foreach ( $middleware as $entry ) {
+        expect( str_starts_with( (string) $entry, 'can:' ) )->toBeFalse();
+    }
+} );

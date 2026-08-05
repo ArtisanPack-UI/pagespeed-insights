@@ -39,6 +39,37 @@ it( 'activates discovered URLs when asked to', function (): void {
     expect( PageSpeedUrl::query()->where( 'is_active', true )->count() )->toBe( 1 );
 } );
 
+it( 'drops third-party entries unless they are asked for', function (): void {
+    Http::fake( [
+        'https://example.com/sitemap.xml' => Http::response( psiSitemapUrlset( [
+            'https://example.com/about',
+            'https://cdn.example.net/asset-page',
+        ] ) ),
+    ] );
+
+    $this->artisan( 'pagespeed:discover-sitemap', [ '--sitemap' => 'https://example.com/sitemap.xml' ] )
+        ->assertSuccessful();
+
+    expect( PageSpeedUrl::query()->pluck( 'url' )->all() )->toBe( [ 'https://example.com/about' ] );
+} );
+
+it( 'keeps third-party entries with --allow-external', function (): void {
+    Http::fake( [
+        'https://example.com/sitemap.xml' => Http::response( psiSitemapUrlset( [
+            'https://example.com/about',
+            'https://cdn.example.net/asset-page',
+        ] ) ),
+    ] );
+
+    $this->artisan( 'pagespeed:discover-sitemap', [
+        '--sitemap'        => 'https://example.com/sitemap.xml',
+        '--allow-external' => true,
+    ] )->assertSuccessful();
+
+    expect( PageSpeedUrl::query()->orderBy( 'url' )->pluck( 'url' )->all() )
+        ->toBe( [ 'https://cdn.example.net/asset-page', 'https://example.com/about' ] );
+} );
+
 it( 'does not duplicate URLs that are already monitored', function (): void {
     PageSpeedUrl::factory()->create( [ 'url' => 'https://example.com/about' ] );
 

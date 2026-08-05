@@ -177,6 +177,15 @@ class PageSpeedInsightsServiceProvider extends ServiceProvider
      * installation that removes it is publishing both — which is a decision
      * worth having to make on purpose.
      *
+     * Authentication is not the whole authorization story where
+     * `routes.ability` is set: that key names a Gate ability, appended to the
+     * configured stack as `can:` middleware. It is appended rather than merged
+     * in so an installation that wants an ability check does not have to
+     * restate `web` and `auth` to get one — restating them is how the `auth`
+     * entry gets dropped by accident. Left unset, the configured middleware
+     * decides everything and an authenticated user is an authorized one, which
+     * is the historical behaviour and remains the default.
+     *
      * @since 1.0.0
      *
      * @return void
@@ -187,9 +196,16 @@ class PageSpeedInsightsServiceProvider extends ServiceProvider
             return;
         }
 
+        $middleware = (array) $this->app[ 'config' ]->get( 'pagespeed-insights.routes.middleware', [ 'web', 'auth' ] );
+        $ability    = $this->app[ 'config' ]->get( 'pagespeed-insights.routes.ability' );
+
+        if ( is_string( $ability ) && '' !== $ability ) {
+            $middleware[] = 'can:' . $ability;
+        }
+
         Route::group( [
             'prefix'     => (string) $this->app[ 'config' ]->get( 'pagespeed-insights.routes.prefix', 'pagespeed' ),
-            'middleware' => (array) $this->app[ 'config' ]->get( 'pagespeed-insights.routes.middleware', [ 'web', 'auth' ] ),
+            'middleware' => $middleware,
         ], function (): void {
             $this->loadRoutesFrom( __DIR__ . '/../routes/web.php' );
         } );

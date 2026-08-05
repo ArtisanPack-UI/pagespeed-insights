@@ -149,6 +149,30 @@ class UrlScope
     }
 
     /**
+     * Whether a stored result or ticket may be read back.
+     *
+     * Deliberately not `allowsTest()`. Queuing a run against an arbitrary URL
+     * is what `routes.allow_external_urls` exists to permit; reading whatever
+     * this installation happens to have stored about a third party's site is
+     * not, and gating a read on the test rule would let that flag turn the
+     * results table into something an authenticated user can enumerate by id.
+     *
+     * An ad hoc run of a page on this application's own origin still has to be
+     * readable by whoever queued it, which is why this is wider than
+     * `allowsRead()`.
+     *
+     * @since 1.0.0
+     *
+     * @param  string  $url  The canonical URL.
+     *
+     * @return bool True when this run may be read back.
+     */
+    public function allowsPoll( string $url ): bool
+    {
+        return $this->isMonitored( $url ) || $this->isOwnOrigin( $url );
+    }
+
+    /**
      * Whether `routes.allow_external_urls` is on.
      *
      * @since 1.0.0

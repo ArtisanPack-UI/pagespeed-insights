@@ -194,6 +194,7 @@ php artisan pagespeed:discover-sitemap --activate
 | `--sitemap=` | The sitemap URL to read. Defaults to `sitemap.xml` at the app URL. |
 | `--limit=` | The most URLs to discover. Defaults to the configured cap (50). |
 | `--activate` | Start testing the discovered URLs immediately. |
+| `--allow-external` | Keep entries hosted somewhere other than the sitemap itself. |
 
 **Discovered URLs are inactive unless you pass `--activate`.** A 500-page
 sitemap activated in one command is 1,000 API requests per cycle against a quota
@@ -214,13 +215,27 @@ A response that parses but is not rooted at `<urlset>` or `<sitemapindex>` is
 rejected by name, because recovery-mode parsing happily reads an HTML error page
 and a custom 404 served with a 200 status is common.
 
-A sitemap index may only point at sitemaps on its own host; a child on a
-different host is skipped and logged. Redirects are followed for the sitemap you
-name — so `example.com/sitemap.xml` redirecting to `www.example.com/sitemap.xml`
-works — but never for a sitemap that a document pointed at, since the host check
-runs before the request and a redirect would step around it. Page URLs on other
-hosts are still discovered, because those are fetched by Google rather than by
-your server.
+A sitemap index may only point at sitemaps on its own **origin** — scheme, host,
+and port all compared — and a child anywhere else is skipped and logged. Host
+alone would still let an index send the discoverer to another port of the same
+machine, or downgrade an `https` walk to `http`. Redirects are followed for the
+sitemap you name — so `example.com/sitemap.xml` redirecting to
+`www.example.com/sitemap.xml` works — but never for a sitemap that a document
+pointed at, since the origin check runs before the request and a redirect would
+step around it.
+
+Page entries are held to the host that served the sitemap they were listed in
+(the host *after* any redirect, so apex-to-www does not discard everything). A
+sitemap listing `https://cdn.example.net/page` under `https://example.com`'s
+sitemap has that entry skipped and logged. This is not about who fetches the
+page — Google does — but about who chooses what this installation monitors: a
+monitored URL is one every authenticated user can read history for, and one that
+spends quota on every cycle. Pass `--allow-external` where that is the point, as
+on an agency install reading a client's sitemap.
+
+A single document is also capped at 10 MB. The sitemaps.org protocol caps one at
+50 MB, and a compressed body that inflates past the cap is a way to exhaust the
+memory of whatever process asked for it.
 
 `SitemapDiscoverer` is available directly when you want the list without storing
 it:

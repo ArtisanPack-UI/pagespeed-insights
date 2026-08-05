@@ -59,6 +59,25 @@ Before contributing, make sure you have:
 7. Push to your fork
 8. Create a merge/pull request
 
+### The `.npmrc` peer-dependency override
+
+This package's `.npmrc` sets `legacy-peer-deps=true`, and it is deliberate:
+`@artisanpack-ui/react` and `@artisanpack-ui/vue` each name `apexcharts` as an
+**optional** peer, in incompatible ranges (`^3.41` against `^5.10`). Neither
+framework's components here draw a chart with it — the trend line is inline SVG
+on both sides — so the conflict is between two optional peers that nothing in
+this package uses, and refusing to install over it would leave the suite unable
+to exercise both halves at once.
+
+Know two things about it:
+
+- It disables peer resolution for **every** install in this repository, not just
+  the conflicting pair. A genuinely wrong peer version will install quietly, so
+  a dependency bump deserves a look at what npm would otherwise have said.
+- It should come out once the two upstream packages agree on an `apexcharts`
+  range. Check before assuming it is still needed — and do not remove it without
+  checking, either.
+
 ## Issue Templates
 
 When creating an issue, you'll be prompted to choose a template. We have several templates to help you provide the right information:

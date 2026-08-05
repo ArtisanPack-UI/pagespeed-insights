@@ -30,6 +30,12 @@ use Illuminate\Console\Command;
  * not looked at yet. Reviewing the list and turning on the pages that matter
  * is a small amount of work; discovering a burned quota is not.
  *
+ * Entries hosted somewhere other than the sitemap itself are dropped unless
+ * `--allow-external` is passed, for the same reason: whoever writes the
+ * sitemap would otherwise choose what this installation monitors, and a
+ * monitored URL is one every authenticated user can read history for. An
+ * agency deliberately reading a client's sitemap opts in.
+ *
  * @package    ArtisanPack_UI
  * @subpackage PageSpeedInsights
  *
@@ -51,7 +57,8 @@ class DiscoverSitemapCommand extends Command
     protected $signature = 'pagespeed:discover-sitemap
         {--sitemap= : The sitemap URL to read. Defaults to sitemap.xml at the app URL.}
         {--limit= : The most URLs to discover. Defaults to the configured cap (50).}
-        {--activate : Start testing the discovered URLs immediately.}';
+        {--activate : Start testing the discovered URLs immediately.}
+        {--allow-external : Keep entries hosted somewhere other than the sitemap itself.}';
 
     /**
      * The console command description.
@@ -86,7 +93,9 @@ class DiscoverSitemapCommand extends Command
         $this->components->info( __( 'Reading :sitemap', [ 'sitemap' => $sitemap ] ) );
 
         try {
-            $found = $discoverer->discover( $sitemap, $limit );
+            $found = $discoverer
+                ->allowExternal( true === $this->option( 'allow-external' ) )
+                ->discover( $sitemap, $limit );
         } catch ( SitemapException $exception ) {
             $this->components->error( $exception->getMessage() );
 
