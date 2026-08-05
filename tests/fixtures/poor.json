@@ -1,0 +1,265 @@
+{
+    "captchaResult": "CAPTCHA_NOT_NEEDED",
+    "kind": "pagespeedonline#result",
+    "id": "https://example.com/slow",
+    "loadingExperience": {
+        "id": "https://example.com",
+        "initial_url": "https://example.com/slow",
+        "origin_fallback": true,
+        "overall_category": "SLOW",
+        "metrics": {
+            "CUMULATIVE_LAYOUT_SHIFT_SCORE": {
+                "percentile": 38,
+                "category": "SLOW",
+                "distributions": [
+                    { "min": 0, "max": 10, "proportion": 0.4102 },
+                    { "min": 10, "max": 25, "proportion": 0.2411 },
+                    { "min": 25, "proportion": 0.3487 }
+                ]
+            },
+            "INTERACTION_TO_NEXT_PAINT": {
+                "percentile": 684,
+                "category": "SLOW",
+                "distributions": [
+                    { "min": 0, "max": 200, "proportion": 0.3218 },
+                    { "min": 200, "max": 500, "proportion": 0.2604 },
+                    { "min": 500, "proportion": 0.4178 }
+                ]
+            },
+            "LARGEST_CONTENTFUL_PAINT_MS": {
+                "percentile": 6412,
+                "category": "SLOW",
+                "distributions": [
+                    { "min": 0, "max": 2500, "proportion": 0.2109 },
+                    { "min": 2500, "max": 4000, "proportion": 0.2317 },
+                    { "min": 4000, "proportion": 0.5574 }
+                ]
+            }
+        }
+    },
+    "originLoadingExperience": {
+        "id": "https://example.com",
+        "overall_category": "SLOW",
+        "metrics": {
+            "LARGEST_CONTENTFUL_PAINT_MS": {
+                "percentile": 5988,
+                "category": "SLOW",
+                "distributions": [
+                    { "min": 0, "max": 2500, "proportion": 0.2411 },
+                    { "min": 2500, "max": 4000, "proportion": 0.2288 },
+                    { "min": 4000, "proportion": 0.5301 }
+                ]
+            }
+        }
+    },
+    "analysisUTCTimestamp": "2026-08-01T14:41:07.902Z",
+    "version": { "major": 5, "minor": 0 },
+    "lighthouseResult": {
+        "requestedUrl": "https://example.com/slow",
+        "finalUrl": "https://example.com/slow/",
+        "finalDisplayedUrl": "https://example.com/slow/",
+        "mainDocumentUrl": "https://example.com/slow/",
+        "lighthouseVersion": "12.6.1",
+        "fetchTime": "2026-08-01T14:41:04.117Z",
+        "runWarnings": [
+            "The page may not be loading as expected because your test URL (https://example.com/slow) was redirected to https://example.com/slow/. Try testing the second URL directly.",
+            "A resource load ended in an error, which may have affected the measured performance."
+        ],
+        "configSettings": { "formFactor": "mobile", "locale": "en-US" },
+        "categories": {
+            "performance": { "id": "performance", "title": "Performance", "score": 0.21 },
+            "accessibility": { "id": "accessibility", "title": "Accessibility", "score": 0.64 },
+            "best-practices": { "id": "best-practices", "title": "Best Practices", "score": 0.58 },
+            "seo": { "id": "seo", "title": "SEO", "score": 0.77 }
+        },
+        "audits": {
+            "first-contentful-paint": {
+                "id": "first-contentful-paint",
+                "title": "First Contentful Paint",
+                "score": 0.12,
+                "numericValue": 4812.3,
+                "numericUnit": "millisecond",
+                "displayValue": "4.8 s"
+            },
+            "largest-contentful-paint": {
+                "id": "largest-contentful-paint",
+                "title": "Largest Contentful Paint",
+                "score": 0.04,
+                "numericValue": 9114.7,
+                "numericUnit": "millisecond",
+                "displayValue": "9.1 s"
+            },
+            "total-blocking-time": {
+                "id": "total-blocking-time",
+                "title": "Total Blocking Time",
+                "score": 0.09,
+                "numericValue": 1840,
+                "numericUnit": "millisecond",
+                "displayValue": "1,840 ms"
+            },
+            "cumulative-layout-shift": {
+                "id": "cumulative-layout-shift",
+                "title": "Cumulative Layout Shift",
+                "score": 0.31,
+                "numericValue": 0.284,
+                "numericUnit": "unitless",
+                "displayValue": "0.284"
+            },
+            "speed-index": {
+                "id": "speed-index",
+                "title": "Speed Index",
+                "score": 0.08,
+                "numericValue": 8903.4,
+                "numericUnit": "millisecond",
+                "displayValue": "8.9 s"
+            },
+            "render-blocking-resources": {
+                "id": "render-blocking-resources",
+                "title": "Eliminate render-blocking resources",
+                "score": 0.11,
+                "numericValue": 1800,
+                "numericUnit": "millisecond",
+                "displayValue": "Potential savings of 1,800 ms",
+                "metricSavings": { "FCP": 1600, "LCP": 1800 },
+                "details": { "type": "opportunity", "overallSavingsMs": 1800 }
+            },
+            "unused-javascript": {
+                "id": "unused-javascript",
+                "title": "Reduce unused JavaScript",
+                "score": 0.14,
+                "numericValue": 1600,
+                "numericUnit": "millisecond",
+                "displayValue": "Potential savings of 412 KiB",
+                "metricSavings": { "LCP": 1600 },
+                "details": { "type": "opportunity", "overallSavingsMs": 1600 }
+            },
+            "unused-css-rules": {
+                "id": "unused-css-rules",
+                "title": "Reduce unused CSS",
+                "score": 0.19,
+                "numericValue": 1400,
+                "numericUnit": "millisecond",
+                "displayValue": "Potential savings of 188 KiB",
+                "metricSavings": { "FCP": 1200, "LCP": 1400 },
+                "details": { "type": "opportunity", "overallSavingsMs": 1400 }
+            },
+            "unminified-javascript": {
+                "id": "unminified-javascript",
+                "title": "Minify JavaScript",
+                "score": 0.27,
+                "numericValue": 1200,
+                "numericUnit": "millisecond",
+                "displayValue": "Potential savings of 96 KiB",
+                "metricSavings": { "LCP": 1200 },
+                "details": { "type": "opportunity", "overallSavingsMs": 1200 }
+            },
+            "modern-image-formats": {
+                "id": "modern-image-formats",
+                "title": "Serve images in next-gen formats",
+                "score": 0.3,
+                "numericValue": 1100,
+                "numericUnit": "millisecond",
+                "displayValue": "Potential savings of 310 KiB",
+                "metricSavings": { "LCP": 1100 },
+                "details": { "type": "opportunity", "overallSavingsMs": 1100 }
+            },
+            "offscreen-images": {
+                "id": "offscreen-images",
+                "title": "Defer offscreen images",
+                "score": 0.36,
+                "numericValue": 950,
+                "numericUnit": "millisecond",
+                "displayValue": "Potential savings of 240 KiB",
+                "metricSavings": { "LCP": 950 },
+                "details": { "type": "opportunity", "overallSavingsMs": 950 }
+            },
+            "uses-text-compression": {
+                "id": "uses-text-compression",
+                "title": "Enable text compression",
+                "score": 0.4,
+                "numericValue": 900,
+                "numericUnit": "millisecond",
+                "displayValue": "Potential savings of 180 KiB",
+                "metricSavings": { "FCP": 800, "LCP": 900 },
+                "details": { "type": "opportunity", "overallSavingsMs": 900 }
+            },
+            "uses-optimized-images": {
+                "id": "uses-optimized-images",
+                "title": "Efficiently encode images",
+                "score": 0.44,
+                "numericValue": 820,
+                "numericUnit": "millisecond",
+                "displayValue": "Potential savings of 145 KiB",
+                "metricSavings": { "LCP": 820 },
+                "details": { "type": "opportunity", "overallSavingsMs": 820 }
+            },
+            "server-response-time": {
+                "id": "server-response-time",
+                "title": "Reduce initial server response time",
+                "score": 0.48,
+                "numericValue": 760,
+                "numericUnit": "millisecond",
+                "displayValue": "Root document took 1,040 ms",
+                "metricSavings": { "FCP": 760, "LCP": 760 },
+                "details": { "type": "opportunity", "overallSavingsMs": 760 }
+            },
+            "redirects": {
+                "id": "redirects",
+                "title": "Avoid multiple page redirects",
+                "score": 0.51,
+                "numericValue": 640,
+                "numericUnit": "millisecond",
+                "displayValue": "Potential savings of 640 ms",
+                "metricSavings": { "FCP": 640, "LCP": 640 },
+                "details": { "type": "opportunity", "overallSavingsMs": 640 }
+            },
+            "unminified-css": {
+                "id": "unminified-css",
+                "title": "Minify CSS",
+                "score": 0.62,
+                "numericValue": 520,
+                "numericUnit": "millisecond",
+                "displayValue": "Potential savings of 41 KiB",
+                "metricSavings": { "FCP": 520 },
+                "details": { "type": "opportunity", "overallSavingsMs": 520 }
+            },
+            "uses-responsive-images": {
+                "id": "uses-responsive-images",
+                "title": "Properly size images",
+                "score": 0.68,
+                "numericValue": 410,
+                "numericUnit": "millisecond",
+                "displayValue": "Potential savings of 88 KiB",
+                "metricSavings": { "LCP": 410 },
+                "details": { "type": "opportunity", "overallSavingsMs": 410 }
+            },
+            "legacy-javascript": {
+                "id": "legacy-javascript",
+                "title": "Avoid serving legacy JavaScript to modern browsers",
+                "score": 1,
+                "numericValue": 0,
+                "numericUnit": "millisecond",
+                "metricSavings": { "FCP": 0, "LCP": 0 },
+                "details": { "type": "opportunity", "overallSavingsMs": 0 }
+            },
+            "uses-long-cache-ttl": {
+                "id": "uses-long-cache-ttl",
+                "title": "Serve static assets with an efficient cache policy",
+                "score": 0.2,
+                "scoreDisplayMode": "informative",
+                "numericValue": 41,
+                "numericUnit": "element",
+                "displayValue": "41 resources found",
+                "details": { "type": "table" }
+            },
+            "long-tasks": {
+                "id": "long-tasks",
+                "title": "Avoid long main-thread tasks",
+                "score": null,
+                "scoreDisplayMode": "notApplicable",
+                "metricSavings": { "TBT": 1400 },
+                "details": { "type": "table" }
+            }
+        }
+    }
+}

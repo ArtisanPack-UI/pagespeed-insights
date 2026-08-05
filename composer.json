@@ -3,7 +3,6 @@
   "description": "Google PageSpeed Insights testing, score history, and UI components for ArtisanPack UI.",
   "type": "library",
   "license": "MIT",
-  "version": "1.0.0",
   "keywords": [
     "laravel",
     "google",
@@ -16,7 +15,8 @@
   ],
   "autoload": {
     "psr-4": {
-      "ArtisanPackUI\\PageSpeedInsights\\": "src/"
+      "ArtisanPackUI\\PageSpeedInsights\\": "src/",
+      "ArtisanPackUI\\PageSpeedInsights\\Database\\Factories\\": "database/factories/"
     },
     "files": [
       "src/helpers.php"
@@ -24,7 +24,8 @@
   },
   "autoload-dev": {
     "psr-4": {
-      "Tests\\": "tests/"
+      "Tests\\": "tests/",
+      "ArtisanPackUI\\CMSFramework\\Modules\\AdminWidgets\\": "tests/Stubs/CmsFrameworkAdminWidgets/"
     }
   },
   "authors": [
@@ -35,7 +36,8 @@
   ],
   "require": {
     "php": "^8.2",
-    "illuminate/support": "^10.0|^11.0|^12.0|^13.0",
+    "illuminate/support": "^12.0|^13.0",
+    "illuminate/database": "^12.0|^13.0",
     "artisanpack-ui/core": "^1.0",
     "artisanpack-ui/hooks": "^1.2",
     "artisanpack-ui/google": "^1.0",
@@ -50,7 +52,8 @@
     "laravel/pint": "^1.26",
     "livewire/livewire": "^3.6",
     "orchestra/testbench": "^10.2|^11.0",
-    "friendsofphp/php-cs-fixer": "^3.75"
+    "friendsofphp/php-cs-fixer": "^3.75",
+    "artisanpack-ui/livewire-ui-components": "^2.1"
   },
   "suggest": {
     "livewire/livewire": "Required for the Blade / Livewire score, Core Web Vitals, opportunity, and trend components and the CMS-framework AdminWidget bridge.",

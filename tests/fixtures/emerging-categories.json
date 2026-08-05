@@ -1,0 +1,55 @@
+{
+    "captchaResult": "CAPTCHA_NOT_NEEDED",
+    "kind": "pagespeedonline#result",
+    "id": "https://example.com/",
+    "analysisUTCTimestamp": "2026-08-01T15:19:12.660Z",
+    "version": { "major": 5, "minor": 0 },
+    "lighthouseResult": {
+        "requestedUrl": "https://example.com/",
+        "finalUrl": "https://example.com/",
+        "finalDisplayedUrl": "https://example.com/",
+        "lighthouseVersion": "13.0.0",
+        "fetchTime": "2026-08-01T15:19:09.204Z",
+        "configSettings": { "formFactor": "mobile", "locale": "en-US" },
+        "categories": {
+            "performance": { "id": "performance", "title": "Performance", "score": 0.74 },
+            "accessibility": { "id": "accessibility", "title": "Accessibility", "score": 0.88 },
+            "best-practices": { "id": "best-practices", "title": "Best Practices", "score": 0.96 },
+            "agentic-browsing": { "id": "agentic-browsing", "title": "Agentic Browsing", "score": 0.52 }
+        },
+        "audits": {
+            "first-contentful-paint": {
+                "id": "first-contentful-paint",
+                "title": "First Contentful Paint",
+                "score": 0.8,
+                "numericValue": 1901.4,
+                "numericUnit": "millisecond",
+                "displayValue": "1.9 s"
+            },
+            "largest-contentful-paint": {
+                "id": "largest-contentful-paint",
+                "title": "Largest Contentful Paint",
+                "score": 0.66,
+                "numericValue": 2894.7,
+                "numericUnit": "millisecond",
+                "displayValue": "2.9 s"
+            },
+            "total-blocking-time": {
+                "id": "total-blocking-time",
+                "title": "Total Blocking Time",
+                "score": 0.71,
+                "numericValue": 410,
+                "numericUnit": "millisecond",
+                "displayValue": "410 ms"
+            },
+            "cumulative-layout-shift": {
+                "id": "cumulative-layout-shift",
+                "title": "Cumulative Layout Shift",
+                "score": 0.92,
+                "numericValue": 0.064,
+                "numericUnit": "unitless",
+                "displayValue": "0.064"
+            }
+        }
+    }
+}

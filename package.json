@@ -1,0 +1,61 @@
+{
+  "name": "@artisanpack-ui/pagespeed-insights",
+  "version": "1.0.0",
+  "private": true,
+  "description": "React and Vue components and the shared fetch layer they share, for the artisanpack-ui/pagespeed-insights Laravel package.",
+  "type": "module",
+  "license": "MIT",
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "type-check": "vue-tsc --noEmit"
+  },
+  "devDependencies": {
+    "@artisanpack-ui/react": "^1.0.1",
+    "@artisanpack-ui/vue": "^1.0.0",
+    "@testing-library/dom": "^10.4.0",
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^16.3.2",
+    "@testing-library/user-event": "^14.6.1",
+    "@testing-library/vue": "^8.1.0",
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^5.2.0",
+    "@vitejs/plugin-vue": "^5.2.4",
+    "apexcharts": "~3.45.2",
+    "clsx": "^2.1.1",
+    "jsdom": "^29.0.1",
+    "react": "^19.2.4",
+    "react-apexcharts": "1.5.0",
+    "react-dom": "^19.2.4",
+    "tailwind-merge": "^3.6.0",
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.2",
+    "vue": "^3.5.40",
+    "vue-tsc": "^3.3.9"
+  },
+  "peerDependencies": {
+    "@artisanpack-ui/react": "^1.0.0",
+    "@artisanpack-ui/vue": "^1.0.0",
+    "react": "^18.0.0 || ^19.0.0",
+    "react-dom": "^18.0.0 || ^19.0.0",
+    "vue": "^3.5.0"
+  },
+  "peerDependenciesMeta": {
+    "@artisanpack-ui/react": {
+      "optional": true
+    },
+    "@artisanpack-ui/vue": {
+      "optional": true
+    },
+    "react": {
+      "optional": true
+    },
+    "react-dom": {
+      "optional": true
+    },
+    "vue": {
+      "optional": true
+    }
+  }
+}
